@@ -1,0 +1,11 @@
+{
+	"projectRoot": ".\\",
+	"srcRoot": "src",
+	"outDir": "build",
+	"entryPoints": {
+		"tests/a.ps1": "psbundler.ps1"
+	},
+	"addSourceFileNames": false,
+	"stripComments": false,
+	"keepFirstLines": 0
+}

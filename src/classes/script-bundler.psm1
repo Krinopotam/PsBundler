@@ -1,13 +1,13 @@
 ﻿using module .\bundler-config.psm1
-using module .\imports-map.psm1
+using module .\imports-mapper.psm1
 using module .\bundle-saver.psm1
 
-class BundleScript {
+class ScriptBundler {
     [string]$_entryPath
     [string]$_bundleName
     [BundlerConfig]$_config
 
-    BundleScript ([string]$entryPath, [string]$bundleName, [BundlerConfig]$config) {
+    ScriptBundler ([string]$entryPath, [string]$bundleName, [BundlerConfig]$config) {
         $this._entryPath = $entryPath
         $this._bundleName = $bundleName
         $this._config = $config
@@ -20,8 +20,8 @@ class BundleScript {
         }
 
         Write-Verbose "    Prepare import map"
-        $iMapCls = [ImportsMap]::new($this._config)
-        $importsMap = $iMapCls.GetImportsMap($this._entryPath)
+        $importsMapper = [ImportsMapper]::new($this._config)
+        $importsMap = $importsMapper.GetImportsMap($this._entryPath)
         if (-not $importsMap) {
             Write-Host "Can't build bundle: no modules map created" -ForegroundColor Red
             return $null

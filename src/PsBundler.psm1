@@ -4,7 +4,7 @@
 #requires -Version 5.1
 ##########################################################################################
 
-using module .\classes\bundle-script.psm1
+using module .\classes\script-bundler.psm1
 using module .\classes\bundler-config.psm1
 using module .\classes\ps-obfuscator.psm1
 
@@ -29,8 +29,8 @@ class PsBundler {
         foreach ($entryPoint in $this._config.entryPoints.Keys) {
             $bundleName = $this._config.entryPoints[$entryPoint]
             Write-Verbose "  Starting bundle: $entryPoint => $bundleName"
-            $psBundler = [BundleScript]::new($entryPoint, $bundleName, $this._config)
-            $resultPath = $psBundler.Start()
+            $scriptBundler = [ScriptBundler]::new($entryPoint, $bundleName, $this._config)
+            $resultPath = $scriptBundler.Start()
             if (-not $resultPath) {
                 Write-Host "Build failed" -ForegroundColor Red
                 return 

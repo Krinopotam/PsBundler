@@ -16,7 +16,7 @@ class FileInfo {
 
     [BundlerConfig]$_config
 
-    FileInfo ([string]$filePath, [BundlerConfig]$config, [bool]$isEntry = $false, [FileInfo]$consumer = $null) {
+    FileInfo ([string]$filePath, [BundlerConfig]$config, [bool]$isEntry = $false, [FileInfo]$consumer = $null, [string]$importType = $null) {
         $this._config = $config
         $fileContent = $this.GetFileContent($filePath, $consumer)
 
@@ -25,7 +25,7 @@ class FileInfo {
         $this.ast = $fileContent.ast
         $this.tokens = $fileContent.tokens
 
-        $this.LinkToConsumer($consumer)
+        $this.LinkToConsumer($consumer, $importType)
         $this.ResolveHederSrc()
 
         if ($this._config.stripComments) { $this.ResolveComments() }
@@ -68,12 +68,142 @@ class FileInfo {
         }
     }
 
-    [void]LinkToConsumer([FileInfo]$consumer) {
+    [void]LinkToConsumer([FileInfo]$consumer, [string]$importType) {
         if (-not $consumer) { return }
-        $this.consumers[$consumer.path] = $consumer
-        $consumer.imports[$this.path] = $this
+        $this.consumers[$consumer.path] = {
+            file = $consumer
+            type = $importType
+        }
+
+        $consumer.imports[$this.path] = {
+            file = $this
+            type = $importType
+        }   
     }
 
+    [string[]]ResolveImports() {
+
+
+
+        
+        return $result
+    }
+
+    # process "Import-Module" (like: Import-Module "file.psm1")
+    [string[]]ResolveImportModuleImports([string]$importPath) {
+        $result = @()
+
+        $importCommands = $this.Ast.FindAll( { $args[0] -is [System.Management.Automation.Language.CommandAst] -and $args[0].CommandElements -and $args[0].CommandElements[0].Value -eq "Import-Module" }, $false)
+        if (-not $importCommands) { return $result }
+        
+        $type = "ImportModule"
+        foreach ($importCommand in $importCommands) {
+            if ($importCommand.CommandElements.length -lt 2) { continue }
+
+            $importPath = $importCommand.CommandElements[0].Value
+            $result += @{
+                path = $this.ResolveImportPath($importPath)
+                type = $type
+                ast  = $importCommand
+            }
+        }
+        
+        return $result
+    }
+
+    [string[]]ParsePathFromImportCommand([ast]$importAst) {
+        if ($importAst.CommandElements.length -lt 2) { return @() }
+
+        function ParseParameter([ast]$parameter) {
+            if ($parameter -is [StringConstantExpressionAst] -and $parameter.Value) { return @($parameter.Value) }
+            if ($parameter -is [ArrayLiteralAst] -and $parameter.Elements) { 
+                $result = @()
+                foreach ($element in $parameter.Elements) {
+                    if ($element -is [StringConstantExpressionAst] -and $element.Value) { $result += $element.Value }
+                }
+            }
+        }
+        
+        # first parameter is string without parameter name (like Import-Module "file.psm1")
+        $result = ParseParameter($importAst.CommandElements[1])
+        if ($result) { return $result } 
+
+        for ($i = 1; $i -lt $importAst.CommandElements.Count; $i++) {
+            if (-not ($importAst.CommandElements[$i].Value -is [CommandParameterAst]) -or $i -ge $importAst.CommandElements.Count) { continue }
+            $parameterAst = $importAst.CommandElements[$i].Value
+            if ($parameterAst.ParameterName -ne "Name" ) { continue }
+            
+            $parameter = $importAst.CommandElements[$i + 1]
+            return ParseParameter($parameter)
+        }
+
+        return @()
+    }
+
+    # process "using module" (like: using module "file.psm1")
+    [string[]]ResolveUsingModuleImports([string]$importPath) {
+        $result = @()
+        $usingStatements = $this.Ast.UsingStatements
+
+        if (-not $usingStatements) { return $result }
+        $type = "UsingModule"
+        foreach ($usingStatement in $usingStatements) {
+            if ($usingStatement.UsingStatementKind -ne "Module") { continue }
+            
+            $result += @{
+                path = $this.ResolveImportPath($usingStatement.Name.Value) 
+                type = $type
+                ast  = $usingStatement
+            }
+        }
+
+        return $result
+    }
+
+    # process "Dot commands" (like: . "file.ps1")
+    [string[]]ResolveDotImports() {
+        $result = @()
+
+        $dotCommands = $this.Ast.FindAll( { $args[0] -is [System.Management.Automation.Language.CommandAst] -and $args[0].InvocationOperator -eq "Dot" }, $false)
+        if (-not $dotCommands) { return $result }
+        
+        $type = "DotCommand"
+        foreach ($dotCommand in $dotCommands) {
+            if (-not $dotCommand.CommandElements) { continue }
+            $importPath = $dotCommand.CommandElements[0].Value
+            $result += @{
+                path = $this.ResolveImportPath($importPath)
+                type = $type
+                ast  = $dotCommand
+            }
+        }
+        
+        return $result
+    }
+
+    # process "Ampersand commands" (like: & "file.ps1")
+    [string[]]ResolveAmpersandImports() {
+        $result = @()
+
+        $ampCommands = $this.Ast.FindAll( { $args[0] -is [System.Management.Automation.Language.CommandAst] -and $args[0].InvocationOperator -eq "Ampersand" }, $false)
+        if (-not $ampCommands) { return $result }
+        
+        $type = "AmpCommand"
+        foreach ($ampCommand in $ampCommands) {
+            if (-not $ampCommand.CommandElements) { continue }
+            $importPath = $ampCommand.CommandElements[0].Value
+            $result += @{
+                path = $this.ResolveImportPath($importPath)
+                type = $type
+                ast  = $ampCommand
+            }
+        }
+        
+        return $result
+    }
+
+
+    # TODO: move to builder mode
     # -- Main entry file can have commands that must be placed at the top. This function will extract them
     ResolveHederSrc() {
         $fileAst = $this.ast
@@ -111,7 +241,8 @@ class FileInfo {
         }
     }
 
-    [string[]]ResolveImports() {
+    #TODO: move "using namespaces" part to bulder module
+    [string[]]ResolveImports2() {
         $usingStatements = $this.Ast.UsingStatements
 
         $result = @()
@@ -124,7 +255,10 @@ class FileInfo {
                     $this.replacements += @{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" }
                 }
                 elseif ($usingStatement.UsingStatementKind -eq "Module") {
-                    $result += $this.ResolveImportPath($usingStatement.Name.Value)
+                    $result += @{
+                        path = $this.ResolveImportPath($usingStatement.Name.Value) 
+                        type = "UsingModule"
+                    }
                     $this.replacements += @{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" }
                 }
             }

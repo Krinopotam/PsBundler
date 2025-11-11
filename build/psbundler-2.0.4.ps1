@@ -1226,12 +1226,12 @@ Class CyclesDetector {
     }
 }
 
-### FILE: D:\projects\Powershell\PSBundler\src\classes\imports-map.psm1 ###
+### FILE: D:\projects\Powershell\PSBundler\src\classes\imports-mapper.psm1 ###
 
-class ImportsMap {
+class ImportsMapper {
     [BundlerConfig]$_config
 
-    importsMap ([BundlerConfig]$config) {
+    ImportsMapper ([BundlerConfig]$config) {
         $this._config = $config
     }
 
@@ -1431,14 +1431,14 @@ Class BundleSaver {
     }
 }
 
-### FILE: D:\projects\Powershell\PSBundler\src\classes\bundle-script.psm1 ###
+### FILE: D:\projects\Powershell\PSBundler\src\classes\script-bundler.psm1 ###
 
-class BundleScript {
+class ScriptBundler {
     [string]$_entryPath
     [string]$_bundleName
     [BundlerConfig]$_config
 
-    BundleScript ([string]$entryPath, [string]$bundleName, [BundlerConfig]$config) {
+    ScriptBundler ([string]$entryPath, [string]$bundleName, [BundlerConfig]$config) {
         $this._entryPath = $entryPath
         $this._bundleName = $bundleName
         $this._config = $config
@@ -1451,8 +1451,8 @@ class BundleScript {
         }
 
         Write-Verbose "    Prepare import map"
-        $iMapCls = [ImportsMap]::new($this._config)
-        $importsMap = $iMapCls.GetImportsMap($this._entryPath)
+        $importsMapper = [ImportsMapper]::new($this._config)
+        $importsMap = $importsMapper.GetImportsMap($this._entryPath)
         if (-not $importsMap) {
             Write-Host "Can't build bundle: no modules map created" -ForegroundColor Red
             return $null
@@ -1489,8 +1489,8 @@ class PsBundler {
         foreach ($entryPoint in $this._config.entryPoints.Keys) {
             $bundleName = $this._config.entryPoints[$entryPoint]
             Write-Verbose "  Starting bundle: $entryPoint => $bundleName"
-            $psBundler = [BundleScript]::new($entryPoint, $bundleName, $this._config)
-            $resultPath = $psBundler.Start()
+            $scriptBundler = [ScriptBundler]::new($entryPoint, $bundleName, $this._config)
+            $resultPath = $scriptBundler.Start()
             if (-not $resultPath) {
                 Write-Host "Build failed" -ForegroundColor Red
                 return 

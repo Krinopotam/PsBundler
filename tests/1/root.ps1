@@ -1,21 +1,27 @@
-using module .\module1.psm1
+#using module .\module1.psm1
 using namespace System.Management.Automation.Language
 
-& $PSScriptRoot\module2.ps1
+#& $PSScriptRoot\module2.ps1
+$sb2 = {
+    $fooVal = $ExecutionContext.SessionState.PSVariable.GetValue('foo')
+    function Use-Module2{
+        "Using Module2"
+    }
+
+    Write-Host "Module2: $fooVal"
+}
 
 
-$internalModule = New-Module -ScriptBlock {
-    
-    [CmdletBinding()]
-    param (
-        [Parameter()]
-        [string] $path = "",
+$sb = {
+    param (        [string] $extraVal    )
+    $sb2 = $ExecutionContext.SessionState.PSVariable.GetValue('sb2')
+    Import-Module (New-Module -ScriptBlock $sb2) -DisableNameChecking 
 
-        [Ast]$ast
-        
-    )
+    $fooVal = $ExecutionContext.SessionState.PSVariable.GetValue('foo')
+
     function Private-Func {
         "I am private"
+        Use-Module2
     }
 
     function Public-Func {
@@ -23,15 +29,15 @@ $internalModule = New-Module -ScriptBlock {
         Private-Func
     }
 
+    Write-Host $extraVal
+    Write-Host $fooVal
     #Export-ModuleMember -Function Public-Func
-	$var1 = "1111111"
 }
+$foo = "---script:foo---"
+
+$internalModule = New-Module -ScriptBlock $sb -ArgumentList "extraVal"
 
 # Импортируем модуль в текущую сессию
-Import-Module $internalModule -DisableNameChecking
+Import-Module $internalModule -DisableNameChecking 
 
-
-$script:var1="22222"
-Use-Func1 "111"
-
-$Script:scriptVar1
+Public-Func "111"

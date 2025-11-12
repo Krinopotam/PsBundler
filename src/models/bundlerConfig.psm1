@@ -1,5 +1,5 @@
-﻿using module .\object-helpers.psm1
-using module .\path-helpers.psm1
+﻿using module ..\helpers\objectHelpers.psm1
+using module ..\helpers\pathHelpers.psm1
 
 class BundlerConfig {
     # project folder root path

@@ -5,7 +5,7 @@
 ##########################################################################################
 
 using module .\classes\script-bundler.psm1
-using module .\classes\bundler-config.psm1
+using module .\models\bundlerConfig.psm1
 using module .\classes\ps-obfuscator.psm1
 
 

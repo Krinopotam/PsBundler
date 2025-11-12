@@ -1,5 +1,5 @@
-using module .\bundler-config.psm1
-using module .\file-info.psm1
+using module ..\models\bundlerConfig.psm1
+using module ..\models\fileInfo.psm1
 
 Class BundleSaver {
     [BundlerConfig]$_config

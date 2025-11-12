@@ -1,4 +1,4 @@
-﻿using module .\file-info.psm1
+﻿using module ..\models\fileInfo.psm1
 
 Class CyclesDetector {
 

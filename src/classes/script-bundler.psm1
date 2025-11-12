@@ -1,4 +1,4 @@
-﻿using module .\bundler-config.psm1
+﻿using module ..\models\bundlerConfig.psm1
 using module .\imports-mapper.psm1
 using module .\bundle-saver.psm1
 

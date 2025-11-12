@@ -42,7 +42,8 @@ Class CyclesDetector {
         $pathList.Add($path)
 
         # Recursively check all imported files (dependencies)
-        foreach ($importFile in $file.imports.Values) {
+        foreach ($importInfo in $file.imports.Values) {
+            $importFile = $importInfo.file
             $result = $this.FindCycle( $importFile, $visited, $stack, $pathList)
             if ($result) { return $result }
         }

@@ -1,4 +1,4 @@
-﻿using module .\cycles-detector.psm1
+﻿using module ..\helpers\cyclesDetector.psm1
 using module ..\parsers\importParser.psm1
 using module ..\models\bundlerConfig.psm1
 using module ..\models\fileInfo.psm1
@@ -15,9 +15,6 @@ class ImportsMapper {
 
     [hashtable]GetImportsMap ([string]$entryPath) {
         $importMap = $this.GenerateMap($entryPath, $true, $null, @{})
-
-        return $null
-
         $cyclesDetector = [CyclesDetector]::new()
         $hasCycles = $cyclesDetector.Check($importMap)
         if ($hasCycles) { return  $null }

@@ -1,6 +1,6 @@
 ﻿using module ..\models\bundlerConfig.psm1
-using module .\imports-mapper.psm1
-using module .\bundle-saver.psm1
+using module ..\process\importsMapper.psm1
+using module ..\classes\bundle-saver.psm1
 
 class ScriptBundler {
     [string]$_entryPath
@@ -28,6 +28,8 @@ class ScriptBundler {
         }
 
         Write-Verbose "    Check cycles complete"
+
+        return ""
 
         $bundleSaver = [BundleSaver]::new($this._config)
         $outputPath = $bundleSaver.Generate($importsMap, $this._bundleName)

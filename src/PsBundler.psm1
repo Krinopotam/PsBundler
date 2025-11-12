@@ -4,7 +4,7 @@
 #requires -Version 5.1
 ##########################################################################################
 
-using module .\classes\script-bundler.psm1
+using module .\process\scriptBundler.psm1
 using module .\models\bundlerConfig.psm1
 using module .\classes\ps-obfuscator.psm1
 

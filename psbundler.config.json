@@ -1,9 +1,8 @@
 {
 	"projectRoot": ".\\",
-	"srcRoot": "src",
 	"outDir": "build",
 	"entryPoints": {
-		"PsBundler.psm1": "psbundler.ps1"
+		"src\\run.ps1": "psbundler.ps1"
 	},
 	"addSourceFileNames": true,
 	"stripComments": true,

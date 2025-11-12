@@ -1,4 +1,4 @@
 ﻿Remove-Module PsBundler -ErrorAction SilentlyContinue
-$modulePath = Resolve-Path ".\src\PsBundler.psd1"
-Import-Module $modulePath -Force
+Import-Module "$PSScriptRoot\PsBundler.psm1" -Force
+#Invoke-PsBundler -configPath "psbundler.config.testCycle.json" -verbose
 Invoke-PsBundler -verbose

@@ -5,8 +5,8 @@
     {
       "type": "PowerShell",
       "request": "launch",
-      "name": "Run main.ps1",
-      "script": "${workspaceFolder}/src/main.ps1"
+      "name": "Run run.ps1",
+      "script": "${workspaceFolder}/src/run.ps1"
     }
   ]
 }

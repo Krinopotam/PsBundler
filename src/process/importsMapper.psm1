@@ -13,21 +13,21 @@ class ImportsMapper {
         $this._importParser = [ImportParser]::new($config)
     }
 
-    [hashtable]GetImportsMap ([string]$entryPath) {
-        $importMap = $this.GenerateMap($entryPath, $true, $null, @{})
+    [System.Collections.Specialized.OrderedDictionary]GetImportsMap ([string]$entryPath) {
+        $importMap = $this.GenerateMap($entryPath, $true, $null, [ordered]@{})
         $cyclesDetector = [CyclesDetector]::new()
         $hasCycles = $cyclesDetector.Check($importMap)
         if ($hasCycles) { return  $null }
         return $importMap
     }
 
-    [hashtable]GenerateMap (       
+    [System.Collections.Specialized.OrderedDictionary]GenerateMap (       
         [string]$filePath,
-        [bool]$isEntry = $false,
-        [hashtable]$consumerInfo = $null,
-        [hashtable]$importMap = @{}) {
+        [bool]$isEntry,
+        [hashtable]$consumerInfo,
+        [System.Collections.Specialized.OrderedDictionary]$importMap) {
 
-        if ($importMap.ContainsKey($filePath)) {
+        if ($importMap.Contains($filePath)) {
             $file = $importMap[$filePath]
             $file.LinkToConsumer($consumerInfo)
             return $importMap

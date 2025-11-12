@@ -1,6 +1,5 @@
 {
 	"projectRoot": ".\\",
-	"srcRoot": "src",
 	"outDir": "build",
 	"entryPoints": {
 		"tests/a.ps1": "psbundler.ps1"

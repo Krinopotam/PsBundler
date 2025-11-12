@@ -28,8 +28,6 @@ Class ImportParser {
         
         $type = "module"
         foreach ($commandAst in $commandAsts) {
-            if ($commandAst.CommandElements.length -lt 2) { continue }
-
             $paths = $this.ParseImportModuleCommandAst($commandAst)
             foreach ($pathInfo in $paths) {
                 $result += @{
@@ -46,7 +44,7 @@ Class ImportParser {
 
     # Get properties from Import-Module CommandAst
     [hashtable[]]ParseImportModuleCommandAst([CommandAst]$commandAst) {
-        if ($commandAst.CommandElements.length -lt 2) { return @() } # ComandAst has no parameters (first CommandElements is command name)
+        if ($commandAst.CommandElements.Count -lt 2) { return @() } # ComandAst has no parameters (first CommandElements is command name)
         
         # Check if first parameter is module path without parameter name (like Import-Module "file.psm1")
         $paths = $this.ParseParameterValueAst($commandAst.CommandElements[1])
@@ -56,8 +54,7 @@ Class ImportParser {
         for ($i = 1; $i -lt $commandAst.CommandElements.Count; $i++) {
             if ($commandAst.CommandElements[$i] -isnot [CommandParameterAst] `
                     -or $commandAst.CommandElements[$i].ParameterName -ne "Name"`
-                    -or ($i + 1) -ge $commandAst.CommandElements.Count`
-                    -or $commandAst.CommandElements[$i + 1] -isnot [StringConstantExpressionAst]) { continue }
+                    -or ($i + 1) -ge $commandAst.CommandElements.Count) { continue }
 
             $parameter = $commandAst.CommandElements[$i + 1]
             $paths = $this.ParseParameterValueAst($parameter)
@@ -70,12 +67,12 @@ Class ImportParser {
     [hashtable[]]ParseParameterValueAst([ast]$parameter) {
         $result = @()
         $elements = @()
-        if ($parameter -is [StringConstantExpressionAst]) { $elements = @($parameter) }
+        if ($parameter -is [StringConstantExpressionAst] -or $parameter -is [ExpandableStringExpressionAst]) { $elements = @($parameter) }
         elseif ($parameter -is [ArrayLiteralAst] -and $parameter.Elements) { $elements = $parameter.Elements }
         else { return $result }
 
         foreach ($element in $elements) {
-            if ($element -isnot [StringConstantExpressionAst] -or -not $this.IsStrIsPsFilePath($element.Value)) { continue }
+            if (($element -isnot [StringConstantExpressionAst] -and $element -isnot [ExpandableStringExpressionAst]) -or -not $this.IsStrIsPsFilePath($element.Value)) { continue }
             $result += @{
                 Path = $element.Value
                 Ast  = $element
@@ -86,6 +83,7 @@ Class ImportParser {
         return $result
     }
 
+    # TODO: implement .psd1 mainfest file parsing
     [bool]IsStrIsPsFilePath([string]$str) {
         return  $str.EndsWith(".ps1") -or $str.EndsWith(".psm1")
     }

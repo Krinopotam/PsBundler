@@ -2,7 +2,7 @@
 
 Class CyclesDetector {
 
-    [boolean]Check([hashtable]$importsMap) {
+    [boolean]Check([System.Collections.Specialized.OrderedDictionary]$importsMap) {
         foreach ($file in $importsMap.Values) {
             $result = $this.FindCycle($file, @{}, @{}, [System.Collections.Generic.List[string]]::new())
             if (-not $result) { continue }

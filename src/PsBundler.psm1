@@ -12,14 +12,14 @@ using module .\classes\ps-obfuscator.psm1
 class PsBundler { 
     [object]$_config
 
-    PsBundler () {
-        $this.Start()
+    PsBundler ([string]$configPath) {
+        $this.Start($configPath)
     }
 
-    [void]Start () {
+    [void]Start ([string]$configPath) {
         Write-Host "Building..."
 
-        $this._config = [BundlerConfig]::new()
+        $this._config = [BundlerConfig]::new($configPath)
 
         if (-not $this._config.entryPoints) {
             Write-Error "No entry points found in config"
@@ -52,5 +52,8 @@ class PsBundler {
 
 function Invoke-PSBundler {
     [CmdletBinding()]
-    $null = New-Object PsBundler 
+    param(
+        [string]$configPath = ""
+    )
+    $null = [PsBundler]::new($configPath) 
 }

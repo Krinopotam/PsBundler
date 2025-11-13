@@ -18,6 +18,7 @@ class ImportsMapper {
         $cyclesDetector = [CyclesDetector]::new()
         $hasCycles = $cyclesDetector.Check($importMap)
         if ($hasCycles) { return  $null }
+        Write-Verbose "    Check cycles complete"
         return $importMap
     }
 
@@ -42,14 +43,22 @@ class ImportsMapper {
 
         foreach ($importInfo in $importsInfo) {
             $consumerInfo = @{
-                File = $file
-                PathAst = $importInfo.PathAst
+                File      = $file
+                PathAst   = $importInfo.PathAst
                 ImportAst = $importInfo.ImportAst
-                Type = $importInfo.Type
+                Type      = $importInfo.Type
             }
             $this.GenerateMap( $importInfo.Path, $false, $consumerInfo, $importMap)
         }
        
         return $importMap
+    }
+
+    # Get entry file
+    [FileInfo]getEntryFile([System.Collections.Specialized.OrderedDictionary]$importsMap) {
+        foreach ($file in $importsMap.Values) {
+            if ($file.isEntry) { return $file }
+        }
+        return $null
     }
 }

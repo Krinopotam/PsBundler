@@ -1,13 +1,16 @@
 using module ..\models\bundlerConfig.psm1
 using module ..\models\fileInfo.psm1
+using module ..\helpers\astHelpers.psm1
 
 using namespace System.Management.Automation.Language
 
 Class ImportParser {
     [BundlerConfig]$_config
+    [AstHelpers]$_astHelper
 
     ImportParser ([BundlerConfig]$Config) {
         $this._config = $Config
+        $this._astHelper = [AstHelpers]::new()
     }
     
     [hashtable[]]ParseFile([FileInfo]$file) {
@@ -42,24 +45,20 @@ Class ImportParser {
         return $result
     }
 
-    # Get properties from Import-Module CommandAst
+    # Get path properties from Import-Module CommandAst
     [hashtable[]]ParseImportModuleCommandAst([CommandAst]$commandAst) {
-        if ($commandAst.CommandElements.Count -lt 2) { return @() } # ComandAst has no parameters (first CommandElements is command name)
-        
-        # Check if first parameter is module path without parameter name (like Import-Module "file.psm1")
-        $paths = $this.ParseParameterValueAst($commandAst.CommandElements[1])
-        if ($paths) { return $paths }
+        $parameters = $this._astHelper.GetCommandAstParamsAst($commandAst)
+        if (-not $parameters) { return @() }
 
-        # Find parameter -Name
-        for ($i = 1; $i -lt $commandAst.CommandElements.Count; $i++) {
-            if ($commandAst.CommandElements[$i] -isnot [CommandParameterAst] `
-                    -or $commandAst.CommandElements[$i].ParameterName -ne "Name"`
-                    -or ($i + 1) -ge $commandAst.CommandElements.Count) { continue }
-
-            $parameter = $commandAst.CommandElements[$i + 1]
-            $paths = $this.ParseParameterValueAst($parameter)
-            return $paths
+        for ($i = 0; $i -lt $parameters.Count; $i++) {
+            $param = $parameters[$i]
+            if (($i -eq 0 -and -not $param.name) -or $param.name -eq "Name") {
+                # first parameter without name or parameter -Name
+                $paths = $this.ParseParameterValueAst($param.value)
+                return $paths
+            }
         }
+
         return @()
     }
 

@@ -1,5 +1,6 @@
 ﻿using module ..\models\bundlerConfig.psm1
 using module ..\process\importsMapper.psm1
+using module ..\process\replacer.psm1
 using module ..\classes\bundle-saver.psm1
 
 class ScriptBundler {
@@ -27,7 +28,11 @@ class ScriptBundler {
             return $null
         }
 
-        Write-Verbose "    Check cycles complete"
+        $entryFile = $importsMapper.GetEntryFile($importsMap)
+        if (-not $entryFile) { Throw "Entry file is not found in imports map" }
+
+        $replacer = [Replacer]::new($this._config)
+        $replacements = $replacer.GetReplacements($importsMap)
 
         return ""
 
@@ -35,5 +40,7 @@ class ScriptBundler {
         $outputPath = $bundleSaver.Generate($importsMap, $this._bundleName)
         return $outputPath
     }
+
+    
     
 }

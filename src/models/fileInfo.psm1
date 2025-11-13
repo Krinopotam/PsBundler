@@ -30,8 +30,6 @@ class FileInfo {
 
         $this.LinkToConsumer($consumerInfo)
         $this.ResolveHederSrc()
-
-        if ($this._config.stripComments) { $this.ResolveComments() }
     }
 
     [hashtable]GetFileContent([string]$filePath, [hashtable]$consumerInfo = $null) {
@@ -120,21 +118,6 @@ class FileInfo {
 
             $this.Replacements += @{start = $startOffset; Length = $endOffset - $startOffset; value = "" }
             $this.paramBlock = ($source.Substring($startOffset, $endOffset - $startOffset)).Trim()
-        }
-    }
-
-    [void]ResolveComments() {
-        $tokenKind = [System.Management.Automation.Language.TokenKind]
-
-        for ($i = 0; $i -lt $this.tokens.Count; $i++) {
-            $token = $this.tokens[$i]
-            if ($token.Kind -ne $tokenKind::Comment) { continue }
-
-            $this.replacements += @{start = $token.Extent.StartOffset; Length = $token.Extent.EndOffset - $token.Extent.StartOffset; value = "" }
-   
-            if ($i - 1 -gt 0 -and $this.tokens[$i - 1].Kind -eq $tokenKind::NewLine) {
-                $this.replacements += @{start = $this.tokens[$i - 1].Extent.StartOffset; Length = $this.tokens[$i - 1].Extent.EndOffset - $this.tokens[$i - 1].Extent.StartOffset; value = "" }
-            }
         }
     }
 }

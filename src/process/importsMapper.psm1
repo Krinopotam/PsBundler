@@ -4,7 +4,7 @@ using module ..\models\bundlerConfig.psm1
 using module ..\models\fileInfo.psm1
 using namespace System.Management.Automation.Language
 
-class ImportsMapper {
+Class ImportsMapper {
     [BundlerConfig]$_config
     [ImportParser]$_importParser
 

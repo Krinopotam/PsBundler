@@ -1,22 +1,26 @@
 using module ..\models\bundlerConfig.psm1
 using namespace System.Management.Automation.Language
 
-class FileInfo {
-    [string]$id
-    [string]$path
-    [hashtable]$consumers = @{}
-    [hashtable]$imports = @{}
-    [bool]$isEntry = $false
-    [Ast]$ast = $null
-    [System.Collections.ObjectModel.ReadOnlyCollection[System.Management.Automation.Language.Token]]$tokens = $null
-    [hashtable]$namespaces = @{}
-    [string]$topHeader = ""
-    [string]$paramBlock = ""
-    [hashtable[]]$replacements = @()
-    [string]$clearSource = ""
-
-
+Class FileInfo {
+    # App config
     [BundlerConfig]$_config
+
+    # file unique id
+    [string]$id
+    # file full path
+    [string]$path
+    # File consumers inf @{[FileInfo]File, [Ast]PathAst, [Ast]ImportAst, [string]Type}o
+    [hashtable]$consumers = @{}
+    # File imports info @{[FileInfo]File, [Ast]PathAst, [Ast]ImportAst, [string]Type}
+    [hashtable]$imports = @{}
+    # Is file entry
+    [bool]$isEntry = $false
+    # File Ast
+    [Ast]$ast = $null
+    # File tokens
+    [System.Collections.ObjectModel.ReadOnlyCollection[System.Management.Automation.Language.Token]]$tokens = $null
+    # Is file contains only types (classes, interfaces, structs, enums)
+    [bool]$typesOnly
 
     FileInfo ([string]$filePath, [BundlerConfig]$config, [bool]$isEntry = $false, [hashtable]$consumerInfo = $null) {
         $this._config = $config
@@ -27,9 +31,8 @@ class FileInfo {
         $this.isEntry = $isEntry
         $this.ast = $fileContent.ast
         $this.tokens = $fileContent.tokens
-
+        $this.typesOnly = $this.IsFileContainsTypesOnly()
         $this.LinkToConsumer($consumerInfo)
-        $this.ResolveHederSrc()
     }
 
     [hashtable]GetFileContent([string]$filePath, [hashtable]$consumerInfo = $null) {
@@ -74,50 +77,32 @@ class FileInfo {
         $this.consumers[$consumerInfo.file.path] = $consumerInfo
 
         $consumerInfo.file.imports[$this.path] = @{
-            File = $this
-            PathAst = $consumerInfo.pathAst
+            File      = $this
+            PathAst   = $consumerInfo.pathAst
             ImportAst = $consumerInfo.importAst
-            Type = $consumerInfo.type
+            Type      = $consumerInfo.type
         }   
     }
 
+    [bool]IsFileContainsTypesOnly() {
+        $types = $this.Ast.FindAll( { $args[0] -is [TypeDefinitionAst] }, $false)
+        if (-not $types) { return $false }
 
+        $varsAndFunctions = $this.Ast.FindAll( {
+                param($node)
 
-    # TODO: move to builder mode
-    # -- Main entry file can have commands that must be placed at the top. This function will extract them
-    ResolveHederSrc() {
-        $fileAst = $this.ast
-        $source = $fileAst.Extent.Text
+                #WORKAROUND: FindAll with nested parameter $false ignores nested scriptblocks only, and finds all nodes within class
+                # So we need manually check if node is inside class
+                $p = $node.Parent
+                while ($null -ne $p) {
+                    if ($p -is [TypeDefinitionAst]) { return $false }
+                    $p = $p.Parent
+                }
 
-        # extract header
-        if ($this.isEntry -and $this._config.keepHeaderComments) {
-            $tokenKind = [System.Management.Automation.Language.TokenKind]
-            $header = ""
-            $headerEnd = 0
-            foreach ($token in $this.tokens) {
-                if ($token.Kind -ne $tokenKind::Comment -and $token.Kind -ne $tokenKind::NewLine) { break }
-                $headerEnd = $token.Extent.EndOffset
-                $header += $token.Extent.Text
-            }
-            if ($header) {
-                $this.replacements += @{start = 0; Length = $headerEnd; value = "" }
-                $this.topHeader = $header.Trim()
-            }
-        }
-        
-        # extract param block
-        if ($fileAst.ParamBlock) { 
-            if (-not $this.IsEntry) { Throw "File '$($this.path)' has a param block. Only entry files can have param block" }
+                return $node -is [AssignmentStatementAst] -or $node -is [FunctionDefinitionAst]
+            }, $false)
+        if ($varsAndFunctions) { return $false }
 
-            $startOffset = $fileAst.ParamBlock.Extent.StartOffset
-            $endOffset = $fileAst.ParamBlock.Extent.EndOffset
-
-            if ($fileAst.ParamBlock.Attributes) { 
-                $startOffset = $fileAst.ParamBlock.Attributes[0].Extent.StartOffset
-            }
-
-            $this.Replacements += @{start = $startOffset; Length = $endOffset - $startOffset; value = "" }
-            $this.paramBlock = ($source.Substring($startOffset, $endOffset - $startOffset)).Trim()
-        }
+        return $true
     }
 }

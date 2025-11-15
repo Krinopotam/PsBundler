@@ -2,6 +2,8 @@ using module ..\models\bundlerConfig.psm1
 using module ..\models\fileInfo.psm1
 using module ..\helpers\astHelpers.psm1
 
+using namespace System.Management.Automation.Language
+
 Class Replacer {
     [BundlerConfig]$_config
     [AstHelpers]$_astHelper
@@ -11,56 +13,77 @@ Class Replacer {
         $this._astHelper = [AstHelpers]::new()
     }
 
-    [System.Collections.ArrayList]getReplacements([System.Collections.Specialized.OrderedDictionary]$importsMap) {
-        $replacements = [System.Collections.ArrayList]::new()
+    [hashtable]getReplacements([System.Collections.Specialized.OrderedDictionary]$importsMap) {
+        $replacementsMap = @{}
+        $namespaces = [System.Collections.Specialized.OrderedDictionary]::new()
+        $addTypes = [System.Collections.Specialized.OrderedDictionary]::new()
+        $classes = [System.Collections.Specialized.OrderedDictionary]::new()
+        $headerComments = ""
+        $paramBlock = ""
 
         foreach ($file in $importsMap.Values) {
-            # Import replacements
-            $importReplacements = $this.getImportReplacements($file)
-            $replacements.AddRange($importReplacements)
+            $replacements = [System.Collections.ArrayList]::new()
+            $replacementsMap[$file.id] = $replacements
 
-            # Comment removals
-            if ($this._config.stripComments) {
-                $commentReplacements = $this.getCommentsReplacements($file)
-                $replacements.AddRange($commentReplacements)
-            }            
+            if ($this.isEntry) { 
+                $headerComments = $this.fillHeaderCommentsReplacements($file, $replacements) 
+                $paramBlock = $this.fillRootParamsReplacements($file, $replacements)
+            }
+
+            # Fill import replacements
+            $this.fillImportReplacements($file, $replacements)
+
+            # Fill comments replacements
+            $this.fillCommentsReplacements($file, $replacements)
+            
+            # Namespaces replacements
+            $this.fillNamespacesReplacements($file, $namespaces, $replacements)
+
+            # Add-Types replacements
+            $this.fillAddTypesReplacements($file, $addTypes, $replacements)
+
+            # Classes replacements
+            $this.fillClassesReplacements($file, $classes, $replacements)
         }
 
-        return $replacements
+        return @{
+            headerComments = $headerComments
+            namespaces     = $namespaces
+            paramBlock     = $paramBlock
+            addTypes       = $addTypes
+            classes        = $classes
+            replacementsMap   = $replacementsMap
+        }
     }
 
-    [System.Collections.ArrayList]getImportReplacements([FileInfo]$file) {
-        $replacements = [System.Collections.ArrayList]::new()
-
+    # Fill import replacements
+    [void]fillImportReplacements([FileInfo]$file, [System.Collections.ArrayList]$replacements) {
         $processedImports = @{}
 
         foreach ($importInfo in $file.imports.Values) {
             $importFile = $importInfo.file
             $importId = $importFile.id
+            $value = ""
+            $replacement = @{
+                Start  = $importInfo.ImportAst.Extent.StartOffset
+                Length = $importInfo.ImportAst.Extent.EndOffset - $importInfo.PathAst.Extent.StartOffset
+                # replace whole dot-import statement
+                Value  = $value
+            }
+
+            $replacements.Add($replacement)
+
+            # Not import types (Classes, interfaces, structs, enums)
+            if ($importFile.typesOnly) { continue }
+
             if ($importInfo.type -eq 'dot') {
-            
-                $replacements.Add(@{
-                        Start  = $importInfo.ImportAst.Extent.StartOffset
-                        Length = $importInfo.ImportAst.Extent.EndOffset - $importInfo.PathAst.Extent.StartOffset
-                        # replace whole dot-import statement
-                        Value  = 'Invoke-Expression ($ExecutionContext.SessionState.PSVariable.GetValue("__PSBUNDLE_MODULES__"))[' + $importId + '].toString()'
-                    })
+                $replacement.Value = 'Invoke-Expression ($ExecutionContext.SessionState.PSVariable.GetValue("__PSBUNDLE_MODULES__"))[' + $importId + '].toString()' 
             }
             elseif ($importInfo.type -eq 'ampersand') {
-                $replacements.Add(@{
-                        Start  = $importInfo.ImportAst.Extent.StartOffset
-                        Length = $importInfo.ImportAst.Extent.EndOffset - $importInfo.ImportAst.Extent.StartOffset
-                        # replace whole ampersand-import statement
-                        Value  = '(($ExecutionContext.SessionState.PSVariable.GetValue("__PSBUNDLE_MODULES__"))[' + $importId + ']).Invoke()'
-                    })
+                $replacement.Value = '(($ExecutionContext.SessionState.PSVariable.GetValue("__PSBUNDLE_MODULES__"))[' + $importId + ']).Invoke()' 
             }
             elseif ($importInfo.type -eq 'using') {
-                $replacements.Add(@{
-                        Start  = $importInfo.ImportAst.Extent.StartOffset
-                        Length = $importInfo.ImportAst.Extent.EndOffset - $importInfo.ImportAst.Extent.StartOffset
-                        # replace whole "using module <path>" statement
-                        Value  = 'Import-Module (New-Module -ScriptBlock ($ExecutionContext.SessionState.PSVariable.GetValue("__PSBUNDLE_MODULES__"))[' + $importId + ']) -Force -DisableNameChecking'
-                    })
+                $replacement.Value = 'Import-Module (New-Module -ScriptBlock ($ExecutionContext.SessionState.PSVariable.GetValue("__PSBUNDLE_MODULES__"))[' + $importId + ']) -Force -DisableNameChecking' 
             }
             elseif ($importInfo.type -eq 'module') {
                 # Import-Module can be passed a paths array. We replace one import to many imports.
@@ -72,26 +95,19 @@ Class Replacer {
                 $value = 'Import-Module (New-Module -ScriptBlock ($ExecutionContext.SessionState.PSVariable.GetValue("__PSBUNDLE_MODULES__"))[' + $importId + ']) ' + $paramsStr
                 if ($processedImports.ContainsKey($importInfo.ImportAst)) {
                     $replacement = $processedImports[$importInfo.ImportAst]
-                    $replacement.Value += "`r`n" + $value
+                    $replacement.Value += [Environment]::NewLine + $value
                 }
                 else {
-                    $replacement = @{
-                        Start  = $importInfo.PathAst.Extent.StartOffset
-                        Length = $importInfo.PathAst.Extent.EndOffset - $importInfo.ImportAst.Extent.StartOffset
-                        # replace Import-Module statement path only
-                        Value  = $value
-                    }
-                    $processedImports[$importInfo.ImportAst] = $replacement
-                    $replacements.Add($replacement)
+                    $replacement.Value = $value
                 }
             } 
         }
-
-        return $replacements
     }
 
-    [System.Collections.ArrayList]getCommentsReplacements([FileInfo]$file) {
-        $replacements = [System.Collections.ArrayList]::new()
+    # Fill replacements for comments
+    [void]fillCommentsReplacements([FileInfo]$file, [System.Collections.ArrayList]$replacements) {
+        if (-not $this._config.stripComments) { return }
+
         $tokenKind = [System.Management.Automation.Language.TokenKind]
 
         for ($i = 0; $i -lt $file.tokens.Count; $i++) {
@@ -104,7 +120,70 @@ Class Replacer {
                 $replacements.Add(@{start = $file.tokens[$i - 1].Extent.StartOffset; Length = $file.tokens[$i - 1].Extent.EndOffset - $file.tokens[$i - 1].Extent.StartOffset; value = "" })
             }
         }
+    }
 
-        return $replacements
+    # Fill replacements for namespaces
+    [void]fillNamespacesReplacements([FileInfo]$file, [System.Collections.Specialized.OrderedDictionary]$namespaces, [System.Collections.ArrayList]$replacements) {
+        $usingStatements = $file.Ast.FindAll( { $args[0] -is [UsingStatementAst] -and $args[0].UsingStatementKind -eq "Namespace" }, $false)
+        foreach ($usingStatement in $usingStatements) {
+            $namespaces[$usingStatement.Name.Value] = "using namespace $($usingStatement.Name.Value)"
+            $replacements.Add(@{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" })
+        }
+    }
+
+    # Fill replacements for Add-Type
+    [void]fillAddTypesReplacements([FileInfo]$file, [System.Collections.Specialized.OrderedDictionary]$addTypes, [System.Collections.ArrayList]$replacements) {
+        $usingStatements = $file.Ast.FindAll( { $args[0] -is [CommandAst] -and $args[0].GetCommandName() -eq "Add-Type" }, $false)
+        foreach ($usingStatement in $usingStatements) {
+            $text = $usingStatement.Extent.Text
+            $addTypes[$text] = $text
+            $replacements.Add(@{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" })
+        }
+    }
+
+    # Fill classes replacements
+    [void]fillClassesReplacements([FileInfo]$file, [System.Collections.Specialized.OrderedDictionary]$classes, [System.Collections.ArrayList]$replacements) {
+        $typeDefinitions = $file.Ast.FindAll( { $args[0] -is [TypeDefinitionAst] }, $false)
+        foreach ($typeDefinition in $typeDefinitions) {
+            if ($classes.Contains($typeDefinition.Name)) { Write-Host "        Duplicate class name: '$($typeDefinition.Name)' in file: $($file.path)" -ForegroundColor Orange }
+            $classes[$typeDefinition.Name] = $typeDefinition.Extent.Text
+            $replacements.Add(@{start = $typeDefinition.Extent.StartOffset; Length = $typeDefinition.Extent.EndOffset - $typeDefinition.Extent.StartOffset; value = "" })
+        }
+    }
+
+    # Fill replacements and extract header comments
+    [string]fillHeaderCommentsReplacements([FileInfo]$file, [System.Collections.ArrayList]$replacements) {
+        if (-not $this.isEntry -or -not $this._config.keepHeaderComments) { return "" }
+        $tokenKind = [System.Management.Automation.Language.TokenKind]
+        $header = ""
+        $headerEnd = 0
+        foreach ($token in $file.tokens) {
+            if ($token.Kind -ne $tokenKind::Comment -and $token.Kind -ne $tokenKind::NewLine) { break }
+            $headerEnd = $token.Extent.EndOffset
+            $header += $token.Extent.Text
+        }
+        if ($header) {
+            $replacements.Add(@{start = 0; Length = $headerEnd; value = "" })
+            return $header.Trim()
+        }
+
+        return ""
+    }
+
+    # Fill replacements and extract param block for entry file
+    [string]fillRootParamsReplacements([FileInfo]$file, [System.Collections.ArrayList]$replacements) {
+        if (-not $this.isEntry -or -not $file.Ast.ParamBlock) { return "" }
+        $fileAst = $this.ast
+        $source = $fileAst.Extent.Text
+
+        $startOffset = $fileAst.ParamBlock.Extent.StartOffset
+        $endOffset = $fileAst.ParamBlock.Extent.EndOffset
+
+        if ($fileAst.ParamBlock.Attributes) { 
+            $startOffset = $fileAst.ParamBlock.Attributes[0].Extent.StartOffset
+        }
+
+        $replacements.Add(@{start = $startOffset; Length = $endOffset - $startOffset; value = "" })
+        return ($source.Substring($startOffset, $endOffset - $startOffset)).Trim()
     }
 }

@@ -1,14 +1,14 @@
 using module ..\models\bundlerConfig.psm1
 using module ..\models\fileInfo.psm1
 
-Class BundleSaver {
+Class BundleBuilder {
     [BundlerConfig]$_config
 
-    BundleSaver ([BundlerConfig]$config) {
+    BundleBuilder ([BundlerConfig]$config) {
         $this._config = $config
     }
 
-    [string]Generate([hashtable]$importsMap, [string]$bundleName) {
+    [string]build([hashtable]$importsMap, [hashtable]$replacementsInfo, [string]$bundleName) {
         try {
             $entryFile = $this.GetEntryFile($importsMap)
             $bundleName = $this.PrepareBundleName($bundleName, $entryFile)
@@ -18,40 +18,52 @@ Class BundleSaver {
             if ((Test-Path $outputPath)) { Remove-Item -Path $outputPath -Force }
             New-Item -ItemType Directory -Force -Path (Split-Path $outputPath) | Out-Null
 
-            $headerContent = $this.GetHeaders($importsMap, $entryFile) + [Environment]::NewLine + $entryFile.content
-            $this.AddContentToFile($outputPath, $headerContent)
-            $this.SaveSource($entryFile, $outputPath, @{})
+            $headerContent = $this.getHeaders($replacementsInfo)
+            $modulesMapContent = $this.getModulesMapContent($importsMap, $replacementsInfo)
+
+            $this.addContentToFile($outputPath, $headerContent)
+            $this.addContentToFile($outputPath, $modulesMapContent)
+            #$this.saveSource($entryFile, $outputPath, @{})
             Write-Verbose "    Bundle saved at: $outputPath"
             return $outputPath
         }
         catch {
-            Write-Error "Error creating bundle: $($_.Exception.Message)"
+            Write-Host "Error creating bundle: $($_.Exception.Message)" -ForegroundColor Red
             exit
         }
     }
 
-    [string]GetHeaders ([hashtable]$importsMap, [FileInfo]$entryFile) {
-        $headers = @()
-        if ($entryFile.topHeader) { $headers += ($entryFile.topHeader + [Environment]::NewLine) }
-        
-        $namespacesString = ($this.GetNamespacesString($importsMap)).trim()
-        if ($namespacesString) { $headers += ($namespacesString + [Environment]::NewLine) }
-        if ($entryFile.paramBlock) { $headers += ($entryFile.paramBlock + [Environment]::NewLine) }
-        return $headers -join [Environment]::NewLine
+    [string]getHeaders ([hashtable]$replacementsInfo) {
+        $result = ""
+        if ($replacementsInfo.headerComments) { $result += ( $replacementsInfo.headerComments + [Environment]::NewLine) }
+
+        $namespaces = $this.getNamespacesString($replacementsInfo.namespaces)
+        if ($namespaces) { $result += ($namespaces + [Environment]::NewLine*2) }
+
+        if ($replacementsInfo.paramBlock) { $result += ($replacementsInfo.paramBlock + [Environment]::NewLine*2) }
+
+        $addTypes = $this.getAddTypesString($replacementsInfo.addTypes)
+        if ($addTypes -and $result) { $result += ( $addTypes + [Environment]::NewLine*2) }
+
+        $classes = $this.getClassesString($replacementsInfo.classes)
+        if ($classes) { $result += ($classes + [Environment]::NewLine*2) }
+
+        return $result
     }
 
-    [string]GetNamespacesString ([hashtable]$importsMap) {
-        $namespacesMap = @{}
-        foreach ($file in $importsMap.Values) {
-            foreach ($namespace in $file.namespaces.Keys) {
-                $namespacesMap["using namespace $namespace"] = $true
-            }
-        }
-
-        return $namespacesMap.Keys -join [Environment]::NewLine
+    [string]getNamespacesString ([System.Collections.Specialized.OrderedDictionary]$namespaces) {
+        return $namespaces.Values -join [Environment]::NewLine
     }
 
-    [FileInfo]GetEntryFile ([hashtable]$importsMap) {
+    [string]getAddTypesString ([System.Collections.Specialized.OrderedDictionary]$addTypes) {
+        return $addTypes.Values -join [Environment]::NewLine
+    }
+
+    [string]getClassesString ([System.Collections.Specialized.OrderedDictionary]$classes) {
+        return $classes.Values -join ([Environment]::NewLine + [Environment]::NewLine)
+    }
+
+    [FileInfo]getEntryFile ([hashtable]$importsMap) {
         foreach ($file in $importsMap.Values) {
             if ($file.isEntry) { return $file }
         }
@@ -59,7 +71,7 @@ Class BundleSaver {
         Throw "Entry file is not found in imports map"
     }
 
-    [hashtable[]] NormalizeReplacements([hashtable[]] $replacements) {
+    [hashtable[]]normalizeReplacements([hashtable[]] $replacements) {
         [hashtable[]]$sorted = $replacements | Sort-Object { $_['Start'] }
         $normalized = @()
         if ($sorted.Count -eq 0) { return $normalized }
@@ -99,16 +111,29 @@ Class BundleSaver {
         return $sortedNormalized
     }
 
-    [string]PrepareSource ([FileInfo]$file) {
+    [string]PrepareSource ([FileInfo]$file, [System.Collections.ArrayList]$replacements) {
         $source = $file.ast.Extent.Text
         $sb = [System.Text.StringBuilder]::new($source)
-        $replacements = $this.NormalizeReplacements($file.replacements)
+        $replacements = $this.NormalizeReplacements($replacements)
         foreach ($r in $replacements) {
             $sb.Remove($r.Start, $r.Length) | Out-Null
             $sb.Insert($r.Start, $r.Replacement) | Out-Null
         }
         return $sb.ToString()
     }
+
+    [string]getModulesMapContent([hashtable]$importsMap, [hashtable]$replacementsInfo) {
+        $modules = [System.Collections.ArrayList]::new()
+        $modules.Add('$script:__PSBUNDLE_HEADER__ = @{}' + [Environment]::NewLine)
+        foreach ($file in $importsMap.Values) {
+            if ($file.typesOnly) { continue }
+            $modules.Add('$script:__PSBUNDLE_MODULES__[' + $file.id + '] = {' + [Environment]::NewLine + $this.PrepareSource($file, $replacementsInfo.replacementsMap[$file.id]) + [Environment]::NewLine + '}')
+        }
+
+        return $modules -join [Environment]::NewLine *2
+    }
+
+
 
     [void]SaveSource([FileInfo]$file, [string]$outFile, [hashtable]$processed = @{}) {
 
@@ -129,7 +154,7 @@ Class BundleSaver {
         $processed[$file.path] = $true
     }
 
-    [void]AddContentToFile([string]$path, [string]$content) {
+    [void]addContentToFile([string]$path, [string]$content) {
         Add-Content -Path $path -Value $content -Encoding UTF8 | Out-Null
     }   
 

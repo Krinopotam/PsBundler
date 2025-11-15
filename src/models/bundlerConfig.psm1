@@ -1,7 +1,7 @@
 ﻿using module ..\helpers\objectHelpers.psm1
 using module ..\helpers\pathHelpers.psm1
 
-class BundlerConfig {
+Class BundlerConfig {
     # project folder root path
     [string]$projectRoot = ".\"
     # output folder path in project folder

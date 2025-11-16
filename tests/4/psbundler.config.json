@@ -2,9 +2,10 @@
 	"projectRoot": ".\\",
 	"outDir": "build",
 	"entryPoints": {
-		"src\\run.ps1": "psbundler.ps1"
+		"tests/4/main.ps1": "psbundler-test4.ps1"
 	},
-	"addSourceFileNames": true,
+	"addSourceFileNames": false,
 	"stripComments": true,
 	"keepHeaderComments": true
+
 }

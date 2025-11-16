@@ -1,0 +1,11 @@
+{
+	"projectRoot": ".\\",
+	"outDir": "build",
+	"entryPoints": {
+		"tests/3/main.ps1": "regexpSearch.ps1"
+	},
+	"addSourceFileNames": false,
+	"stripComments": true,
+	"keepHeaderComments": true,
+	"obfuscate": true
+}

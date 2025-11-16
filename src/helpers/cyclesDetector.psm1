@@ -1,8 +1,8 @@
-﻿using module .\file-info.psm1
+﻿using module ..\models\fileInfo.psm1
 
 Class CyclesDetector {
 
-    [boolean]Check([hashtable]$importsMap) {
+    [boolean]Check([System.Collections.Specialized.OrderedDictionary]$importsMap) {
         foreach ($file in $importsMap.Values) {
             $result = $this.FindCycle($file, @{}, @{}, [System.Collections.Generic.List[string]]::new())
             if (-not $result) { continue }
@@ -42,7 +42,8 @@ Class CyclesDetector {
         $pathList.Add($path)
 
         # Recursively check all imported files (dependencies)
-        foreach ($importFile in $file.imports.Values) {
+        foreach ($importInfo in $file.imports.Values) {
+            $importFile = $importInfo.file
             $result = $this.FindCycle( $importFile, $visited, $stack, $pathList)
             if ($result) { return $result }
         }

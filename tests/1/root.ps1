@@ -35,3 +35,31 @@ $script:var1="22222"
 Use-Func1 "111"
 
 $Script:scriptVar1
+
+$x=2
+
+function RootFunc {
+    "I am Root func"
+}
+
+$sb = {
+    $x2=1
+
+    $sb2 = {
+        $x2=2
+        function MyPrivate {
+            "I am MyPrivate"
+        }
+
+        RootFunc
+    }
+
+    . $sb2
+
+    Write-Host "============= $x2"
+}
+
+. $sb
+
+Write-Host "-------------- $x"
+MyPrivate

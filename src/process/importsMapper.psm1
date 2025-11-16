@@ -18,7 +18,6 @@ Class ImportsMapper {
         $cyclesDetector = [CyclesDetector]::new()
         $hasCycles = $cyclesDetector.Check($importMap)
         if ($hasCycles) { return  $null }
-        Write-Verbose "    Check cycles complete"
         return $importMap
     }
 
@@ -33,8 +32,6 @@ Class ImportsMapper {
             $file.LinkToConsumer($consumerInfo)
             return $importMap
         }
-
-        Write-Verbose "      Add file to map: $filePath"
 
         $file = [FileInfo]::new($filePath, $this._config, $isEntry, $consumerInfo)
         $importMap[$file.path] = $file

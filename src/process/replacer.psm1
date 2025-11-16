@@ -25,16 +25,13 @@ Class Replacer {
             $replacements = [System.Collections.ArrayList]::new()
             $replacementsMap[$file.id] = $replacements
 
-            if ($this.isEntry) { 
+            if ($file.isEntry) { 
                 $headerComments = $this.fillHeaderCommentsReplacements($file, $replacements) 
                 $paramBlock = $this.fillRootParamsReplacements($file, $replacements)
             }
 
             # Fill import replacements
             $this.fillImportReplacements($file, $replacements)
-
-            # Fill comments replacements
-            $this.fillCommentsReplacements($file, $replacements)
             
             # Namespaces replacements
             $this.fillNamespacesReplacements($file, $namespaces, $replacements)
@@ -47,12 +44,12 @@ Class Replacer {
         }
 
         return @{
-            headerComments = $headerComments
-            namespaces     = $namespaces
-            paramBlock     = $paramBlock
-            addTypes       = $addTypes
-            classes        = $classes
-            replacementsMap   = $replacementsMap
+            headerComments  = $headerComments
+            namespaces      = $namespaces
+            paramBlock      = $paramBlock
+            addTypes        = $addTypes
+            classes         = $classes
+            replacementsMap = $replacementsMap
         }
     }
 
@@ -66,7 +63,7 @@ Class Replacer {
             $value = ""
             $replacement = @{
                 Start  = $importInfo.ImportAst.Extent.StartOffset
-                Length = $importInfo.ImportAst.Extent.EndOffset - $importInfo.PathAst.Extent.StartOffset
+                Length = $importInfo.ImportAst.Extent.EndOffset - $importInfo.ImportAst.Extent.StartOffset
                 # replace whole dot-import statement
                 Value  = $value
             }
@@ -77,13 +74,16 @@ Class Replacer {
             if ($importFile.typesOnly) { continue }
 
             if ($importInfo.type -eq 'dot') {
-                $replacement.Value = 'Invoke-Expression ($ExecutionContext.SessionState.PSVariable.GetValue("__PSBUNDLE_MODULES__"))[' + $importId + '].toString()' 
+                #$replacement.Value = '. ($ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '"))["' + $importId + '"]' 
+                $replacement.Value = '. $script:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
             }
             elseif ($importInfo.type -eq 'ampersand') {
-                $replacement.Value = '(($ExecutionContext.SessionState.PSVariable.GetValue("__PSBUNDLE_MODULES__"))[' + $importId + ']).Invoke()' 
+                #$replacement.Value = '& ($ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '"))["' + $importId + '"]' 
+                $replacement.Value = '& $script:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
             }
             elseif ($importInfo.type -eq 'using') {
-                $replacement.Value = 'Import-Module (New-Module -ScriptBlock ($ExecutionContext.SessionState.PSVariable.GetValue("__PSBUNDLE_MODULES__"))[' + $importId + ']) -Force -DisableNameChecking' 
+                #$replacement.Value = 'Import-Module (New-Module -ScriptBlock $ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '")["' + $importId + '"]) -Force -DisableNameChecking' 
+                $replacement.Value = 'Import-Module (New-Module -ScriptBlock $' + $this._config.modulesSourceMapVarName + '["' + $importId + '"] -ArgumentList $script:' + $this._config.modulesSourceMapVarName + ') -Force -DisableNameChecking' 
             }
             elseif ($importInfo.type -eq 'module') {
                 # Import-Module can be passed a paths array. We replace one import to many imports.
@@ -92,7 +92,8 @@ Class Replacer {
                 $importParams["DisableNameChecking"] = $null
                 $paramsStr = $this._astHelper.ConvertParamsAstMapToString($importParams)
 
-                $value = 'Import-Module (New-Module -ScriptBlock ($ExecutionContext.SessionState.PSVariable.GetValue("__PSBUNDLE_MODULES__"))[' + $importId + ']) ' + $paramsStr
+                #$value = 'Import-Module (New-Module -ScriptBlock $ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '")["' + $importId + '"])' + $paramsStr
+                $value = 'Import-Module (New-Module -ScriptBlock $' + $this._config.modulesSourceMapVarName + '["' + $importId + '"] -ArgumentList $script:' + $this._config.modulesSourceMapVarName + ')' + $paramsStr
                 if ($processedImports.ContainsKey($importInfo.ImportAst)) {
                     $replacement = $processedImports[$importInfo.ImportAst]
                     $replacement.Value += [Environment]::NewLine + $value
@@ -101,24 +102,6 @@ Class Replacer {
                     $replacement.Value = $value
                 }
             } 
-        }
-    }
-
-    # Fill replacements for comments
-    [void]fillCommentsReplacements([FileInfo]$file, [System.Collections.ArrayList]$replacements) {
-        if (-not $this._config.stripComments) { return }
-
-        $tokenKind = [System.Management.Automation.Language.TokenKind]
-
-        for ($i = 0; $i -lt $file.tokens.Count; $i++) {
-            $token = $file.tokens[$i]
-            if ($token.Kind -ne $tokenKind::Comment) { continue }
-
-            $replacements.Add(@{start = $token.Extent.StartOffset; Length = $token.Extent.EndOffset - $token.Extent.StartOffset; value = "" })
-   
-            if (($i - 1) -gt 0 -and $file.tokens[$i - 1].Kind -eq $tokenKind::NewLine) {
-                $replacements.Add(@{start = $file.tokens[$i - 1].Extent.StartOffset; Length = $file.tokens[$i - 1].Extent.EndOffset - $file.tokens[$i - 1].Extent.StartOffset; value = "" })
-            }
         }
     }
 
@@ -153,7 +136,7 @@ Class Replacer {
 
     # Fill replacements and extract header comments
     [string]fillHeaderCommentsReplacements([FileInfo]$file, [System.Collections.ArrayList]$replacements) {
-        if (-not $this.isEntry -or -not $this._config.keepHeaderComments) { return "" }
+        if (-not $file.isEntry -or -not $this._config.keepHeaderComments) { return "" }
         $tokenKind = [System.Management.Automation.Language.TokenKind]
         $header = ""
         $headerEnd = 0
@@ -172,8 +155,8 @@ Class Replacer {
 
     # Fill replacements and extract param block for entry file
     [string]fillRootParamsReplacements([FileInfo]$file, [System.Collections.ArrayList]$replacements) {
-        if (-not $this.isEntry -or -not $file.Ast.ParamBlock) { return "" }
-        $fileAst = $this.ast
+        if (-not $file.isEntry -or -not $file.Ast.ParamBlock) { return "" }
+        $fileAst = $file.Ast
         $source = $fileAst.Extent.Text
 
         $startOffset = $fileAst.ParamBlock.Extent.StartOffset

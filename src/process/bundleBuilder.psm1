@@ -11,20 +11,17 @@ Class BundleBuilder {
     [string]build([hashtable]$importsMap, [hashtable]$replacementsInfo, [string]$bundleName) {
         try {
             $entryFile = $this.GetEntryFile($importsMap)
-            $bundleName = $this.PrepareBundleName($bundleName, $entryFile)
+            $bundleName = $this.GetBundleName($bundleName, $entryFile)
             $outputPath = Join-Path $this._config.outDir $bundleName
-            Write-Host "    Start save bundle at: $outputPath"
 
             if ((Test-Path $outputPath)) { Remove-Item -Path $outputPath -Force }
             New-Item -ItemType Directory -Force -Path (Split-Path $outputPath) | Out-Null
 
             $headerContent = $this.getHeaders($replacementsInfo)
-            $modulesMapContent = $this.getModulesMapContent($importsMap, $replacementsInfo)
+            $modulesContent = $this.getModulesContent($entryFile, $replacementsInfo)
 
             $this.addContentToFile($outputPath, $headerContent)
-            $this.addContentToFile($outputPath, $modulesMapContent)
-            #$this.saveSource($entryFile, $outputPath, @{})
-            Write-Verbose "    Bundle saved at: $outputPath"
+            $this.addContentToFile($outputPath, $modulesContent)
             return $outputPath
         }
         catch {
@@ -35,18 +32,18 @@ Class BundleBuilder {
 
     [string]getHeaders ([hashtable]$replacementsInfo) {
         $result = ""
-        if ($replacementsInfo.headerComments) { $result += ( $replacementsInfo.headerComments + [Environment]::NewLine) }
+        if ($replacementsInfo.headerComments) { $result += ( $replacementsInfo.headerComments + [Environment]::NewLine * 2) }
 
         $namespaces = $this.getNamespacesString($replacementsInfo.namespaces)
-        if ($namespaces) { $result += ($namespaces + [Environment]::NewLine*2) }
+        if ($namespaces) { $result += ($namespaces + [Environment]::NewLine * 2) }
 
-        if ($replacementsInfo.paramBlock) { $result += ($replacementsInfo.paramBlock + [Environment]::NewLine*2) }
+        if ($replacementsInfo.paramBlock) { $result += ($replacementsInfo.paramBlock + [Environment]::NewLine * 2) }
 
         $addTypes = $this.getAddTypesString($replacementsInfo.addTypes)
-        if ($addTypes -and $result) { $result += ( $addTypes + [Environment]::NewLine*2) }
+        if ($addTypes -and $result) { $result += ( $addTypes + [Environment]::NewLine * 2) }
 
         $classes = $this.getClassesString($replacementsInfo.classes)
-        if ($classes) { $result += ($classes + [Environment]::NewLine*2) }
+        if ($classes) { $result += ($classes + [Environment]::NewLine * 2) }
 
         return $result
     }
@@ -72,6 +69,7 @@ Class BundleBuilder {
     }
 
     [hashtable[]]normalizeReplacements([hashtable[]] $replacements) {
+        # WORKAROUND: System.Collections.ArrayList may unfold hashtables when sorting. So we must use [hashtable[]]
         [hashtable[]]$sorted = $replacements | Sort-Object { $_['Start'] }
         $normalized = @()
         if ($sorted.Count -eq 0) { return $normalized }
@@ -86,7 +84,7 @@ Class BundleBuilder {
             $rStart = [int]$r.Start
             $rEnd = $rStart + [int]$r.Length
 
-            if ($rStart -le $currEnd) {
+            if ($rStart -lt $currEnd) {
                 # Merge overlapping
                 $newStart = [Math]::Min($currStart, $rStart)
                 $newEnd = [Math]::Max($currEnd, $rEnd)
@@ -115,48 +113,69 @@ Class BundleBuilder {
         $source = $file.ast.Extent.Text
         $sb = [System.Text.StringBuilder]::new($source)
         $replacements = $this.NormalizeReplacements($replacements)
+        #$replacements = $replacements | Sort-Object { $_['Start'] } -Descending
         foreach ($r in $replacements) {
-            $sb.Remove($r.Start, $r.Length) | Out-Null
-            $sb.Insert($r.Start, $r.Replacement) | Out-Null
+            $sb.Remove($r.Start, $r.Length)
+            $sb.Insert($r.Start, $r.Value)
         }
         return $sb.ToString()
     }
 
-    [string]getModulesMapContent([hashtable]$importsMap, [hashtable]$replacementsInfo) {
-        $modules = [System.Collections.ArrayList]::new()
-        $modules.Add('$script:__PSBUNDLE_HEADER__ = @{}' + [Environment]::NewLine)
-        foreach ($file in $importsMap.Values) {
-            if ($file.typesOnly) { continue }
-            $modules.Add('$script:__PSBUNDLE_MODULES__[' + $file.id + '] = {' + [Environment]::NewLine + $this.PrepareSource($file, $replacementsInfo.replacementsMap[$file.id]) + [Environment]::NewLine + '}')
-        }
+    [string]getModulesContent([FileInfo]$entryFile, [hashtable]$replacementsInfo) {
+        $contentList = [System.Collections.ArrayList]::new()
+        $contentList.Add('$script:' + $this._config.modulesSourceMapVarName + ' = @{}' + [Environment]::NewLine)
 
-        return $modules -join [Environment]::NewLine *2
+        $this.fillModulesContentList($entryFile, $replacementsInfo, $contentList, "", @{})
+
+        if ($contentList.Count -eq 1) { return "" }
+        return $contentList -join [Environment]::NewLine * 2
     }
 
-
-
-    [void]SaveSource([FileInfo]$file, [string]$outFile, [hashtable]$processed = @{}) {
-
-        if ($file.imports.Keys.Count -gt 0) {
-            foreach ($importFile in $file.imports.Values) {
+    [void]fillModulesContentList([FileInfo]$file, [hashtable]$replacementsInfo, [System.Collections.ArrayList]$contentList, [string]$importType, [hashtable]$processed = @{}) {
+        if ($file.imports.Values.Count -gt 0) {
+            foreach ($importInfo in $file.imports.Values) {
+                $importFile = $importInfo.file
                 if ($processed[$importFile.path]) { continue }
-                $this.SaveSource($importFile, $outFile, $processed)
+                $this.fillModulesContentList($importFile, $replacementsInfo, $contentList, $importInfo.Type, $processed)
             }
         }
 
-        if ($this._config.addSourceFileNames) {
-            $this.AddContentToFile($outFile, "`n### FILE: $($file.path) ###`n")
+        if ($file.typesOnly) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
+        $source = $this.PrepareSource($file, $replacementsInfo.replacementsMap[$file.id])
+        if (-not $file.isEntry) {
+            if ($importType -eq "Using" -or $importType -eq "Module") { 
+                # add parameter for modules variable
+                $source = 'param($' + $this._config.modulesSourceMapVarName + ')' + [Environment]::NewLine + $source
+            }
+            $source = '$script:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source, "    ")
         }
 
-        $source = $this.PrepareSource($file)
-        $this.AddContentToFile($outFile, $source.Trim())
-        Write-Host "        File '$($file.path)' added to bundle." -ForegroundColor Green
         $processed[$file.path] = $true
+        $contentList.Add($source)
+        Write-Host "        File '$($file.path)' processed." -ForegroundColor Green
+        return
+    }
+
+    # Wraps string in { ... } and make indents
+    [string]bracketWrap([string]$str, [string]$indent = "    ") {
+        return "{" + [Environment]::NewLine + (($str -split "\r?\n" | ForEach-Object { "$indent$_" }) -join [Environment]::NewLine) + [Environment]::NewLine + "}"
     }
 
     [void]addContentToFile([string]$path, [string]$content) {
         Add-Content -Path $path -Value $content -Encoding UTF8 | Out-Null
     }   
+
+    [string]GetBundleName ($bundleName, [FileInfo]$entryFile) { 
+        $version = $this.ParseVersion($entryFile)
+        if (-not $version) { return $bundleName }
+
+        Write-Verbose "    Bundle version detected: $version"
+
+        $name = [System.IO.Path]::GetFileNameWithoutExtension($bundleName)
+        $ext = [System.IO.Path]::GetExtension($bundleName)
+
+        return "$name-$version$ext"
+    }
 
     [string]ParseVersion([FileInfo]$file) {
         $tokens = $file.tokens
@@ -172,18 +191,5 @@ Class BundleBuilder {
         }
 
         return ""
-    }
-
-    [string]PrepareBundleName ($bundleName, [FileInfo]$entryFile) { 
-
-        $version = $this.ParseVersion($entryFile)
-        if (-not $version) { return $bundleName }
-
-        Write-Verbose "    Bundle version detected: $version"
-
-        $name = [System.IO.Path]::GetFileNameWithoutExtension($bundleName)
-        $ext = [System.IO.Path]::GetExtension($bundleName)
-
-        return "$name-$version$ext"
     }
 }

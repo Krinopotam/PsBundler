@@ -17,6 +17,9 @@ Class BundlerConfig {
     # whether to obfuscate the output bundle (Natural/Hard)
     [string]$obfuscate = ""
 
+    # Source map variable name used in bundle
+    [string]$modulesSourceMapVarName # = "__PS_BUNDLER_MODULES__"
+
     [ObjectHelpers]$_objectHelpers
     [PathHelpers]$_pathHelpers
 
@@ -24,6 +27,7 @@ Class BundlerConfig {
         $this._objectHelpers = [ObjectHelpers]::New()
         $this._pathHelpers = [PathHelpers]::New()
         $this.Load($configPath)
+        $this.modulesSourceMapVarName = "__MODULES_" + [Guid]::NewGuid().ToString("N")
     }
 
     [void]Load([string]$configPath="") {

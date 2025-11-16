@@ -2,9 +2,9 @@
 	"projectRoot": ".\\",
 	"outDir": "build",
 	"entryPoints": {
-		"tests/a.ps1": "psbundler.ps1"
+		"tests/cycled/a.ps1": "cycled.ps1"
 	},
 	"addSourceFileNames": false,
-	"stripComments": false,
-	"keepFirstLines": 0
+	"stripComments": true,
+	"keepHeaderComments": true
 }

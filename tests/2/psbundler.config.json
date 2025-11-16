@@ -1,0 +1,11 @@
+{
+	"projectRoot": ".\\",
+	"outDir": "build",
+	"entryPoints": {
+		"tests/2/main.ps1": "psbundler-test2.ps1"
+	},
+	"addSourceFileNames": false,
+	"stripComments": true,
+	"keepHeaderComments": true
+
+}

@@ -17,7 +17,6 @@ Class ScriptBundler {
     [string]Start () {
         if (-not (Test-Path $this._entryPath)) { Throw "HANDLED: Entry point not found: $($this._entryPath)" }
 
-        Write-Verbose "    Prepare import map"
         $importsMapper = [ImportsMapper]::new($this._config)
         $importsMap = $importsMapper.GetImportsMap($this._entryPath)
         if (-not $importsMap) { Throw "HANDLED: Can't build bundle: no modules map created" }
@@ -32,7 +31,4 @@ Class ScriptBundler {
         $outputPath = $bundleBuilder.Build($importsMap, $replacementsInfo, $this._bundleName)
         return $outputPath
     }
-
-    
-    
 }

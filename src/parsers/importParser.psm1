@@ -29,12 +29,14 @@ Class ImportParser {
         $commandAsts = $file.Ast.FindAll( { $args[0] -is [CommandAst] -and $args[0].CommandElements -and $args[0].CommandElements[0].Value -eq "Import-Module" }, $true)
         if (-not $commandAsts) { return $result }
         
-        $type = "module"
+        $type = "Module"
         foreach ($commandAst in $commandAsts) {
             $paths = $this.ParseImportModuleCommandAst($commandAst)
             foreach ($pathInfo in $paths) {
+                $importPath = $this.ResolveImportPath($file, $type, $pathInfo.Path)
+                if (-not $importPath) { continue }
                 $result += @{
-                    Path      = $this.ResolveImportPath($file, $type, $pathInfo.Path)
+                    Path      = $importPath
                     PathAst   = $pathInfo.Ast
                     ImportAst = $commandAst
                     Type      = $type
@@ -94,12 +96,15 @@ Class ImportParser {
         $usingStatements = $file.Ast.UsingStatements
 
         if (-not $usingStatements) { return $result }
-        $type = "using"
+        $type = "Using"
         foreach ($usingStatement in $usingStatements) {
             if ($usingStatement.UsingStatementKind -ne "Module") { continue }
             
+            $importPath = $this.ResolveImportPath($file, $type, $usingStatement.Name.Value) 
+            if (-not $importPath) { continue }
+
             $result += @{
-                Path      = $this.ResolveImportPath($file, $type, $usingStatement.Name.Value) 
+                Path      = $importPath
                 PathAst   = $usingStatement.Name
                 ImportAst = $usingStatement
                 Type      = $type
@@ -109,19 +114,24 @@ Class ImportParser {
         return $result
     }
 
-    # process "Dot commands" (like: . "file.ps1")
-    [hashtable[]]ParseDotImports([FileInfo]$file) {
+    # process invocation imports, Dot and Ampersand (like: '& file.ps1' or '. file.ps1')
+    [hashtable[]]ParseInvocationImports([FileInfo]$file, [string]$type) {
         $result = @()
-
-        $commandAsts = $file.Ast.FindAll( { $args[0] -is [System.Management.Automation.Language.CommandAst] -and $args[0].InvocationOperator -eq "Dot" }, $true)
+        $commandAsts = $null
+        if ($type -eq "Dot") { $commandAsts = $file.Ast.FindAll( { $args[0] -is [CommandAst] -and $args[0].InvocationOperator -eq 'Dot' }, $true) }
+        elseif ($type -eq "Ampersand") { $commandAsts = $file.Ast.FindAll( { $args[0] -is [CommandAst] -and $args[0].InvocationOperator -eq 'Ampersand' }, $true) }
+        else { return $result }
+        
         if (-not $commandAsts) { return $result }
         
-        $type = "dot"
         foreach ($commandAst in $commandAsts) {
-            if (-not $commandAst.CommandElements) { continue }
-            $importPath = $commandAst.CommandElements[0].Value
+            if (-not $commandAst.CommandElements `
+                    -or ($commandAst.CommandElements[0] -isnot [StringConstantExpressionAst] -and $commandAst.CommandElements[0] -isnot [ExpandableStringExpressionAst]) `
+                    -or -not $commandAst.CommandElements[0].Value) { continue }
+            $importPath = $this.ResolveImportPath($file, $type, $commandAst.CommandElements[0].Value)
+            if (-not $importPath) { continue }
             $result += @{
-                Path      = $this.ResolveImportPath($file, $type, $importPath)
+                Path      = $importPath
                 PathAst   = $commandAst.CommandElements[0]
                 ImportAst = $commandAst
                 Type      = $type
@@ -129,65 +139,16 @@ Class ImportParser {
         }
         
         return $result
+    }
+
+    # process "Dot commands" (like: . "file.ps1")
+    [hashtable[]]ParseDotImports([FileInfo]$file) {
+        return $this.ParseInvocationImports($file, "Dot")
     }
 
     # process "Ampersand commands" (like: & "file.ps1")
     [string[]]ResolveAmpersandImports([FileInfo]$file) {
-        $result = @()
-
-        $commandAsts = $file.Ast.FindAll( { $args[0] -is [System.Management.Automation.Language.CommandAst] -and $args[0].InvocationOperator -eq "Ampersand" }, $true)
-        if (-not $commandAsts) { return $result }
-        
-        $type = "ampersand"
-        foreach ($commandAst in $commandAsts) {
-            if (-not $commandAst.CommandElements) { continue }
-            $importPath = $commandAst.CommandElements[0].Value
-            $result += @{
-                Path      = $this.ResolveImportPath( $file, $type, $importPath)
-                PathAst   = $commandAst.CommandElements[0]
-                ImportAst = $commandAst
-                Type      = $type
-            }
-        }
-        
-        return $result
-    }
-
-    #TODO: move "using namespaces" part to bulder module
-    [string[]]ResolveImports2() {
-        $usingStatements = $this.Ast.UsingStatements
-
-        $result = @()
-
-        # process "using" (like: using module "file.psm1")
-        if ($usingStatements) {
-            foreach ($usingStatement in $usingStatements) {
-                if ($usingStatement.UsingStatementKind -eq "Namespace") { 
-                    $this.namespaces[$usingStatement.Name.Value] = $true
-                    $this.replacements += @{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" }
-                }
-                elseif ($usingStatement.UsingStatementKind -eq "Module") {
-                    $result += @{
-                        path = $this.ResolvePath($usingStatement.Name.Value) 
-                        type = "UsingModule"
-                    }
-                    $this.replacements += @{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" }
-                }
-            }
-        }
-
-        # process "dot commands" (like: . "file.ps1")
-        $dotCommands = $this.Ast.FindAll( { $args[0] -is [System.Management.Automation.Language.CommandAst] -and $args[0].InvocationOperator -eq "Dot" }, $false)
-        if ($dotCommands) {
-            foreach ($dotCommand in $dotCommands) {
-                if (-not $dotCommand.CommandElements) { continue }
-                $importPath = $dotCommand.CommandElements[0].Value
-                $result += $this.ResolvePath($importPath)
-                $this.replacements += @{start = $dotCommand.Extent.StartOffset; Length = $dotCommand.Extent.EndOffset - $dotCommand.Extent.StartOffset; value = "" }
-            }
-        }
-        
-        return $result
+        return $this.ParseInvocationImports($file, "Ampersand")
     }
 
     [string] ResolveImportPath(

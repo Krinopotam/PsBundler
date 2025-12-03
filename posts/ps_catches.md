@@ -7,7 +7,7 @@ PowerShell часто выглядит как обычный и достаточ
 Без знания особенностей этого поведения начинающего разработчика на Powershell ждет "веселое" времяпровождение за дебаггингом кода. Прочувствовав на себе все эти "грабли" и получив дополнительно несколько седых волос, хотел бы поделиться своим опытом, возможно это кому то будет полезно.
 
 ```
-Всё изложенное ниже основано на моём личном опыте и не претендует на абсолютную истину. Описанные трудности могут быть следствием моей собственной некомпетентности в PowerShell. Материал ориентирован на разработчиков, привыкших к более классическим языкам программирования
+Всё изложенное ниже основано на моём личном опыте, не претендует на абсолютную истину и относится к PowerShell версии 5.1. Описанные трудности могут быть следствием моей собственной некомпетентности в PowerShell. Материал ориентирован на разработчиков, привыкших к более классическим языкам программирования
 ```
 
 Начну со своего "любимого" поведения в Powershell.
@@ -18,8 +18,8 @@ PowerShell часто выглядит как обычный и достаточ
 
 ```powershell
  function Test-Func {
-     $table = New-Object System.Data.DataTable
-     $table.Columns.Add("Name")
+     $arrayList = [System.Collections.ArrayList]::new()
+     $arraylist.Add("New item")
 
      return $false
  }
@@ -35,27 +35,27 @@ PowerShell часто выглядит как обычный и достаточ
 
 А дело вот в чем. Как я уже сказал, Powershell прежде всего шелл, и только потом язык программирования. И в нашем случае работают 2 фактора:
 
-1. Если результат вызываемой функции (или метода) не присвоен переменной, то этот результат выводится в консоль (output stream)
+1. Если результат вызываемой функции (или метода) не присвоен переменной, то этот результат выводится в конвейер (output stream)
 2. Функция возвращает не только то, что указано в `return`, но и все, что было выведено в output stream во время выполнения этой функции.
 
-В нашей функции `Test-Func` вызывается метод `$table.Columns.Add("Name")`, который добавляет в `DataTable` новый столбец, а также возвращает экземпляр этого столбца. Так как возвращаемый результат не присвоен переменной, он попадает в output stream. Таким образом наша функция `Test-Func` возвращает массив, состоящий из двух элементов `@(Column, $false)`, а не ожидаемый нами `$false`.
+В нашей функции `Test-Func` вызывается метод `$arraylist.Add("New item")`, который добавляет в массив новый элемент, а также возвращает индекс этого нового элемента — `0`. Так как возвращаемый результат не присвоен переменной, он попадает в output stream. Таким образом наша функция `Test-Func` возвращает массив, состоящий из двух элементов `@(0, $false)`, а не ожидаемый нами `$false`.
 
-Чтобы исправить нашу функцию, придется подавить вывод результата вызова метода `$table.Columns.Add("Name")`, например так:
+Чтобы исправить нашу функцию, придется подавить вывод результата вызова метода `$arraylist.Add("New item")`, например так (рекомендуемый способ):
 
 ```powershell
 $null = $table.Columns.Add("Name")
 ```
 
-или так
+или так (но медленнее)
 
 ```powershell
 [void]$table.Columns.Add("Name")
 ```
 
-или можно так
+или можно так (еще медленнее, особенно в PS 5.1)
 
 ```powershell
-$table.Columns.Add("Name")| Out-Null
+$table.Columns.Add("Name") | Out-Null
 ```
 
 ---
@@ -65,21 +65,21 @@ $table.Columns.Add("Name")| Out-Null
 Вот небольшой пример кода
 
 ```powershell
-    function Get-Many {
-        $array = @("A", "B", "C")
-        return $array
-    }
+function Get-Many {
+    $array = @("A", "B", "C")
+    return $array
+}
 
-    function Get-Single {
-        $array = @("A")
-        return $array
-    }
+function Get-Single {
+    $array = @("A")
+    return $array
+}
 
-    $many = Get-Many
-    $single = Get-Single
+$many = Get-Many
+$single = Get-Single
 
-    $many.GetType().Name
-    $single.GetType().Name
+$many.GetType().Name
+$single.GetType().Name
 ```
 
 Угадаете, какие типы переменных `$many` и `$single` выведет данный код?
@@ -107,21 +107,21 @@ String
 Если мы перепишем наш код следующим образом, то все будет работатать, как мы того и ожидаем.
 
 ```powershell
-    function Get-Many {
-        $array = @("A", "B", "C")
-        return , $array
-    }
+function Get-Many {
+    $array = @("A", "B", "C")
+    return , $array
+}
 
-    function Get-Single {
-        $array = @("A")
-        return , $array
-    }
+function Get-Single {
+    $array = @("A")
+    return , $array
+}
 
-    $many = Get-Many
-    $single = Get-Single
+$many = Get-Many
+$single = Get-Single
 
-    $many.GetType().Name
-    $single.GetType().Name
+$many.GetType().Name
+$single.GetType().Name
 ```
 
 Обраьтите внимание, на запятую в строке `return , $array`, именно в ней вся магия. Теперь результат будет, как мы и ожидаем:
@@ -138,20 +138,20 @@ Object[]
 Рассмотрим следюущий пример:
 
 ```powershell
-    $array = @("A", "B", "C")
-    Write-Host "Old items count: $($array.Count)"
+$array = @("A", "B", "C")
+Write-Host "Old items count: $($array.Count)"
 
-    function Add-Item {
-        param($item)
-        
-        if ($array) {
-            Write-Host "Add item"
-            $array += $item
-        }
+function Add-Item {
+    param($item)
+    
+    if ($array) {
+        Write-Host "Add item"
+        $array += $item
     }
+}
 
-    Add-Item "New Item"
-    Write-Host "New items count: $($array.Count)"
+Add-Item "New Item"
+Write-Host "New items count: $($array.Count)"
 ```
 
 Что мы тут ожидаем увидеть?
@@ -187,20 +187,20 @@ New items count: 3
 Ниже исправленный пример:
 
 ```powershell
-    $array = @("A", "B", "C")
-    Write-Host "Old items count: $($array.Count)"
+$array = @("A", "B", "C")
+Write-Host "Old items count: $($array.Count)"
 
-    function Add-Item {
-        param($item)
-        
-        if ($script:array) {
-            Write-Host "Add item"
-            $script:array += $item
-        }
+function Add-Item {
+    param($item)
+    
+    if ($script:array) {
+        Write-Host "Add item"
+        $script:array += $item
     }
+}
 
-    Add-Item "New Item"
-    Write-Host "New items count: $($array.Count)"
+Add-Item "New Item"
+Write-Host "New items count: $($array.Count)"
 ```
 
 ---
@@ -210,7 +210,7 @@ New items count: 3
 Простой пример:
 
 ```powershell
-    Write-Host "A" + "B"
+Write-Host "A" + "B"
 ```
 
 Мне, как человеку, больше привыкшему к другим ЯП, было очевидно, что: `Write-Host` это функция, которая должна вывести конкатенацию двух строк `A` и `B`. То есть результат я ожидал `AB`.
@@ -232,19 +232,148 @@ New items count: 3
 Чтобы парсер посчитал `"A" + "B"` выражением, необходимо использовать скобки.
 
 ```powershell
-    Write-Host ("A" + "B")
+Write-Host ("A" + "B")
 ```
 
 Тогда результат будет ожидаемым `AB`.
 
 ---
 
+## В PowerShell объекты одного и того-же типа могут иметь разное поведение ##
+
+Согласно мануалу от Microsoft, начиная с PowerShell 3.0, можно использовать ускоритель типов `[ordered]` для создания объектов типа `[OrderedDictionary]`.
+Поробуем создать 2 объекта этого типа, только первый через ускоритель типа `[ordered]`, второй через создание экземпляра `[OrderedDictionary]` напрямую.
+
+```powershell
+$dict1 = [ordered]@{}
+$dict2 = [System.Collections.Specialized.OrderedDictionary]::new()
+
+if ($dict1.GetType() -eq $dict2.GetType()) {Write-Host "Types are equal"}
+
+$dict1['one'] = 1
+$dict1['One'] = 1
+
+$dict2['one'] = 1
+$dict2['One'] = 1
+```
+
+В коде мы проверяем, что типы объектов идентичны. Убедимся в этом:
+
+```powershell
+$dict1.GetType()
+$dict2.GetType()
+
+IsPublic IsSerial Name                                     BaseType
+-------- -------- ----                                     --------
+True     True     OrderedDictionary                        System.Object
+
+IsPublic IsSerial Name                                     BaseType
+-------- -------- ----                                     --------
+True     True     OrderedDictionary                        System.Object
+
+```
+
+Зная,что все объекты в PowerShell оборачиваются в объект типа `[PsObject]`, можно проверить свойства `$dict1.PsObject` и `$dict2.PsObject`. Но и они будут идентичны.
+
+Но если мы выведем список элементов полученных словарей, то обнаружим, что в словаре `$dict1` только 1 элемент `'One'`, а в словаре `$dict2` два элемента — `'one'` и `'One'`.
+
+```
+Types are equal
+
+$dict1
+Name                           Value
+----                           -----
+One                            1
+
+$dict2
+one                            1
+One                            1
+```
+
+То есть наглядно видно, что имея одинаковый тип у них разное поведение: `$dict1` регистронезависим, а `$dict2` регистрозависим. Да и по оформлению вывода содержимого объектов в консоль видно, что они разные.
+
+И почему же так происходит? Потому,что в PowerShell слишком много "магии". На самом деле `[ordered]@{}` это `[OrderedHashtable]`, который только маскируется под `[OrderedDictionary]`, но ведёт себя иначе. А вот объект, созданый напрямую через `[OrderedDictionary]::new()` является почти чистым **.Net** объектом, обернутым в `PsObject`. И в нем нет регистронезависимости, прнятой во всем PowerShell.
+
+---
+
+## В PowerShell замыкания работают не так, как мы привыкли ##
+
+Замыкания это важнейший механизм во многих современных языках программирования. Например JavaScript без замыканий и представить уже нельзя. В PowerShell также есть замыкания, но есть нюансы...
+Например, рассмотрим следующий код:
+
+```powershell
+Add-Type -AssemblyName System.Windows.Forms
+
+function Get-Form {
+    $form = New-Object System.Windows.Forms.Form
+    
+    $extVal = "Test Form"
+    $form.Add_Shown({
+        $form.Text = $extVal
+    })
+
+    $form.ShowDialog()
+}
+
+Get-Form
+
+```
+
+Как видим, в функции `Get-Form` мы создаем форму, а также подписываемся на событие отображения формы `Add_Shown`. В скрипт-блоке (хэндлере) этого события мы меняем текст заголовка формы на зачение из внешней (по отношению к хэндлеру) переменной.
+Данный код выполнится корректно.
+
+Теперь мы немного хотим изменить логику функции: не открывать форму сразу в функции `Get-Form`, а сначала просто вовзращаем экземпляр формы (переменную `$form`).
+
+
+```powershell
+Add-Type -AssemblyName System.Windows.Forms
+
+function Get-Form {
+    $form = New-Object System.Windows.Forms.Form
+    
+    $extVal = "Test Form"
+    $form.Add_Shown({
+        $form.Text = $extVal
+    })
+
+    return $form
+}
+
+$myForm = Get-Form
+$myForm.ShowDialog()
+```
+
+И вот теперь мы получис ошибку, что в хэндлере события `Add_Shown` переменные `$form` и `$extVal` не существуют.
+Почему так, ведь в первом случае все работало?
+
+Многие, конечно, догадаются, что на самом деле никаких замыканий не было ни в первом ни во втором случае. В первом случае все работает потому, что вызов `$form.ShowDialog()` внутри функции `Get-Form` синхронный и блокирует дальнейшее выполнение кода и выхода из функции не было. Таким образом на момент сработки события `Add_Shown` контектс функции `Get-Form` еще существовал и хэндлер видел переменные из контекста функции.
+
+А вот во втором случае функция `Get-Form` к моменту сработки события уже отработала и ее контекст очищен.
+
+Для того, чтобы замыкание сраблотало, нужно использовать метод `GetNewClosure()`:
+
+```powershell
+    ...
+    $form.Add_Shown({
+        $form.Text = $extVal
+    }.GetNewClosure())
+    ...
+```
+
+И вот сейчас все сработает.
+
+Но честно говоря, сам я стараюсь не использовать механизм замыканий в PowerShell. По мне так он работает не всегда очевидно и стабильно. Сталкивался с тем, что видимость переменных и функций могла зависеть от их названий или не работать при определенных условиях. Например, если имя функции указано как команда, через дефис, то все ОК, а если нет, в некоторых случаях функция могла быть не видна. В общем устал разбираться с каждым непонятным случаем и отказался от замыканий.
+
 ## Медленная конкатенация строк и массивов ##
 
-## Замыкания и области видимости ##
-
-## Облась видимости по названию функции ##
-
-## Магическая переменная $form ##
-
 ## Создание переменной в методе класса, в котором уже есть такое свойство ##
+
+С версии 5.0 в PowerShell появились классы и они существенно облегчили написание чистого кода и управление областями видимости. Многие упомянутые выше неочевидные вещи PowerShell стали неактуальны при использовании классов. Однако некоторое поведение PowerShell иногда вызывают недоумение и в классах, если не знать некоторых нюансов.
+
+
+переменные
+
+сигнатура функций
+
+не перезаписываемость класса
+

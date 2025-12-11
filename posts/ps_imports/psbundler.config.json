@@ -1,0 +1,10 @@
+{
+	"projectRoot": ".\\",
+	"outDir": "build",
+	"entryPoints": {
+		"posts/ps_imports/test1.ps1": "test1.ps1"
+	},
+	"addSourceFileNames": false,
+	"stripComments": true,
+	"keepHeaderComments": true
+}

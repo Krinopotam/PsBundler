@@ -1,6 +1,6 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.3
+#Version: 2.1.4
 #requires -Version 5.1
 ##########################################################################################
 
@@ -731,7 +731,7 @@ Class AstHelpers {
     }
 }
 
-Class Replacer {
+class Replacer {
     [BundlerConfig]$_config
     [AstHelpers]$_astHelper
 
@@ -782,6 +782,7 @@ Class Replacer {
         foreach ($importInfo in $file.imports.Values) {
             $importFile = $importInfo.file
             $importId = $importFile.id
+            $moduleName = [System.IO.Path]::GetFileNameWithoutExtension($importFile.Path)
             $value = ""
             $replacement = @{
                 Start  = $importInfo.ImportAst.Extent.StartOffset
@@ -794,21 +795,20 @@ Class Replacer {
             if ($importFile.typesOnly) { continue }
 
             if ($importInfo.type -eq 'dot') {                
-                $replacement.Value = '. $script:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
+                $replacement.Value = '. $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
             }
             elseif ($importInfo.type -eq 'ampersand') {                
-                $replacement.Value = '& $script:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
+                $replacement.Value = '& $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
             }
             elseif ($importInfo.type -eq 'using') {                
-                $replacement.Value = 'Import-Module (New-Module -ScriptBlock $' + $this._config.modulesSourceMapVarName + '["' + $importId + '"] -ArgumentList $script:' + $this._config.modulesSourceMapVarName + ') -Force -DisableNameChecking' 
+                $replacement.Value = 'Import-Module (New-Module -Name ' + $moduleName + ' -ScriptBlock $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]) -DisableNameChecking' 
             }
             elseif ($importInfo.type -eq 'module') {                
                 $importParams = $this._astHelper.GetNamedParametersMap($importInfo.ImportAst)
-                $importParams["Force"] = $null
                 $importParams["DisableNameChecking"] = $null
                 $paramsStr = $this._astHelper.ConvertParamsAstMapToString($importParams)
                 
-                $value = 'Import-Module (New-Module -ScriptBlock $' + $this._config.modulesSourceMapVarName + '["' + $importId + '"] -ArgumentList $script:' + $this._config.modulesSourceMapVarName + ')' + $paramsStr
+                $value = 'Import-Module (New-Module -Name ' + $moduleName + ' -ScriptBlock $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"])' + $paramsStr
                 if ($processedImports.ContainsKey($importInfo.ImportAst)) {
                     $replacement = $processedImports[$importInfo.ImportAst]
                     $replacement.Value += [Environment]::NewLine + $value
@@ -998,7 +998,7 @@ Class BundleBuilder {
 
     [string]getModulesContent([FileInfo]$entryFile, [hashtable]$replacementsInfo) {
         $contentList = [System.Collections.ArrayList]::new()
-        $contentList.Add('$script:' + $this._config.modulesSourceMapVarName + ' = @{}' + [Environment]::NewLine)
+        $contentList.Add('$global:' + $this._config.modulesSourceMapVarName + ' = @{}' + [Environment]::NewLine)
 
         $this.fillModulesContentList($entryFile, $replacementsInfo, $contentList, "", @{})
 
@@ -1018,10 +1018,7 @@ Class BundleBuilder {
         if ($file.typesOnly) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
         $source = $this.PrepareSource($file, $replacementsInfo.replacementsMap[$file.id])
         if (-not $file.isEntry) {
-            if ($importType -eq "Using" -or $importType -eq "Module") {                 
-                $source = 'param($' + $this._config.modulesSourceMapVarName + ')' + [Environment]::NewLine + $source
-            }
-            $source = '$script:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source, "    ")
+            $source = '$global:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source, "    ")
         }
 
         $processed[$file.path] = $true
@@ -1937,11 +1934,10 @@ Class FuncNameGenerator {
 }
 
 
-$script:__MODULES_dbbd5564190d440cb7437fcf0f63f3f7 = @{}
+$global:__MODULES_27523e20aa3d46149df2396860c44fcb = @{}
 
 
-$script:__MODULES_dbbd5564190d440cb7437fcf0f63f3f7["2164369f1c6745daaef676fcb5beccd5"] = {
-    param($__MODULES_dbbd5564190d440cb7437fcf0f63f3f7)
+$global:__MODULES_27523e20aa3d46149df2396860c44fcb["6068719a5c89451a892f4ddd3555551e"] = {
     
     
     
@@ -1958,5 +1954,7 @@ $script:__MODULES_dbbd5564190d440cb7437fcf0f63f3f7["2164369f1c6745daaef676fcb5be
     
 }
 
-Import-Module (New-Module -ScriptBlock $__MODULES_dbbd5564190d440cb7437fcf0f63f3f7["2164369f1c6745daaef676fcb5beccd5"] -ArgumentList $script:__MODULES_dbbd5564190d440cb7437fcf0f63f3f7) -Force -DisableNameChecking
+Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_27523e20aa3d46149df2396860c44fcb["6068719a5c89451a892f4ddd3555551e"]) -Force -DisableNameChecking
 Invoke-PsBundler -verbose
+
+

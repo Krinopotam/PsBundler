@@ -52,7 +52,7 @@ Class AstHelpers {
         $paramsStr = ""
         foreach ($key in $paramsMap.Keys) {
             $value = $paramsMap[$key]
-            if ($value) { $paramsStr += " -$key " + $value.Extent.Text }
+            if ($value) { $paramsStr += " -$key " + $value.toString() }
             else { $paramsStr += " -$key" }
         }
         return $paramsStr

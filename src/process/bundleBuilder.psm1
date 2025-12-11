@@ -123,7 +123,7 @@ Class BundleBuilder {
 
     [string]getModulesContent([FileInfo]$entryFile, [hashtable]$replacementsInfo) {
         $contentList = [System.Collections.ArrayList]::new()
-        $contentList.Add('$script:' + $this._config.modulesSourceMapVarName + ' = @{}' + [Environment]::NewLine)
+        $contentList.Add('$global:' + $this._config.modulesSourceMapVarName + ' = @{}' + [Environment]::NewLine)
 
         $this.fillModulesContentList($entryFile, $replacementsInfo, $contentList, "", @{})
 
@@ -143,11 +143,7 @@ Class BundleBuilder {
         if ($file.typesOnly) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
         $source = $this.PrepareSource($file, $replacementsInfo.replacementsMap[$file.id])
         if (-not $file.isEntry) {
-            if ($importType -eq "Using" -or $importType -eq "Module") { 
-                # add parameter for modules variable
-                $source = 'param($' + $this._config.modulesSourceMapVarName + ')' + [Environment]::NewLine + $source
-            }
-            $source = '$script:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source, "    ")
+            $source = '$global:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source, "    ")
         }
 
         $processed[$file.path] = $true

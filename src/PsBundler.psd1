@@ -1,6 +1,6 @@
 ﻿@{
     RootModule        = 'PsBundler.psm1'
-    ModuleVersion     = '2.1.0'
+    ModuleVersion     = '2.1.1'
     GUID              = '5bbc89a0-1efe-45ad-bd20-39e87f3c3373'
     Author            = 'Maxim Zaytsev'
     Copyright         = '(c) 2025 Maxim Zaytsev. All rights reserved.'

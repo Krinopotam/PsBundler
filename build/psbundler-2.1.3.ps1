@@ -1937,11 +1937,11 @@ Class FuncNameGenerator {
 }
 
 
-$script:__MODULES_dbbd5564190d440cb7437fcf0f63f3f7 = @{}
+$script:__MODULES_7e19e5d9cc7d4480a199b3d2d4d25523 = @{}
 
 
-$script:__MODULES_dbbd5564190d440cb7437fcf0f63f3f7["2164369f1c6745daaef676fcb5beccd5"] = {
-    param($__MODULES_dbbd5564190d440cb7437fcf0f63f3f7)
+$script:__MODULES_7e19e5d9cc7d4480a199b3d2d4d25523["8541be0a80294cc5a0db881e9332c653"] = {
+    param($__MODULES_7e19e5d9cc7d4480a199b3d2d4d25523)
     
     
     
@@ -1958,5 +1958,5 @@ $script:__MODULES_dbbd5564190d440cb7437fcf0f63f3f7["2164369f1c6745daaef676fcb5be
     
 }
 
-Import-Module (New-Module -ScriptBlock $__MODULES_dbbd5564190d440cb7437fcf0f63f3f7["2164369f1c6745daaef676fcb5beccd5"] -ArgumentList $script:__MODULES_dbbd5564190d440cb7437fcf0f63f3f7) -Force -DisableNameChecking
+Import-Module (New-Module -ScriptBlock $__MODULES_7e19e5d9cc7d4480a199b3d2d4d25523["8541be0a80294cc5a0db881e9332c653"] -ArgumentList $script:__MODULES_7e19e5d9cc7d4480a199b3d2d4d25523) -Force -DisableNameChecking
 Invoke-PsBundler -verbose

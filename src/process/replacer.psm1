@@ -4,7 +4,7 @@ using module ..\helpers\astHelpers.psm1
 
 using namespace System.Management.Automation.Language
 
-Class Replacer {
+class Replacer {
     [BundlerConfig]$_config
     [AstHelpers]$_astHelper
 
@@ -74,26 +74,34 @@ Class Replacer {
             if ($importFile.typesOnly) { continue }
 
             if ($importInfo.type -eq 'dot') {
-                #$replacement.Value = '. ($ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '"))["' + $importId + '"]' 
-                $replacement.Value = '. $script:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
+                $replacement.Value = '. $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
             }
             elseif ($importInfo.type -eq 'ampersand') {
-                #$replacement.Value = '& ($ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '"))["' + $importId + '"]' 
-                $replacement.Value = '& $script:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
+                $replacement.Value = '& $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
             }
             elseif ($importInfo.type -eq 'using') {
-                #$replacement.Value = 'Import-Module (New-Module -ScriptBlock $ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '")["' + $importId + '"]) -Force -DisableNameChecking' 
-                $replacement.Value = 'Import-Module (New-Module -ScriptBlock $' + $this._config.modulesSourceMapVarName + '["' + $importId + '"] -ArgumentList $script:' + $this._config.modulesSourceMapVarName + ') -Force -DisableNameChecking' 
+                $replacement.Value = 'Import-Module (New-Module -ScriptBlock $' + $this._config.modulesSourceMapVarName + '["' + $importId + '"] -ArgumentList $global:' + $this._config.modulesSourceMapVarName + ') -Force -DisableNameChecking' 
             }
             elseif ($importInfo.type -eq 'module') {
                 # Import-Module can be passed a paths array. We replace one import to many imports.
                 $importParams = $this._astHelper.GetNamedParametersMap($importInfo.ImportAst)
                 $importParams["Force"] = $null
                 $importParams["DisableNameChecking"] = $null
+                <#                 if (-not $importParams.Contains("Name")) {
+                     $importParams["Name"] = [System.IO.Path]::GetFileNameWithoutExtension($file.path) } #>
                 $paramsStr = $this._astHelper.ConvertParamsAstMapToString($importParams)
 
-                #$value = 'Import-Module (New-Module -ScriptBlock $ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '")["' + $importId + '"])' + $paramsStr
-                $value = 'Import-Module (New-Module -ScriptBlock $' + $this._config.modulesSourceMapVarName + '["' + $importId + '"] -ArgumentList $script:' + $this._config.modulesSourceMapVarName + ')' + $paramsStr
+                $moduleName = [System.IO.Path]::GetFileNameWithoutExtension($importInfo.File.Path)
+                #$value = 'Import-Module (New-Module -Name "' + $moduleName + '" -ScriptBlock $' + $this._config.modulesSourceMapVarName + '["' + $importId + '"] -ArgumentList $script:' + $this._config.modulesSourceMapVarName + ')' + $paramsStr
+                
+                $createModule = '(& { $mod = New-Object System.Management.Automation.PSModuleInfo($' + $this._config.modulesSourceMapVarName + '["' + $importId + '"])'
+                $createModule += [Environment]::NewLine + '    $flags  = [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic'
+                $createModule += [Environment]::NewLine + '    $setName = [System.Management.Automation.PSModuleInfo].GetMethod("SetName", $flags)'
+                $createModule += [Environment]::NewLine + '    $setName.Invoke($mod, @("' + $moduleName + '")) | Out-Null'
+                $createModule += [Environment]::NewLine + '    $mod })'
+
+                $value = 'Import-Module ' + $createModule + $paramsStr
+
                 if ($processedImports.ContainsKey($importInfo.ImportAst)) {
                     $replacement = $processedImports[$importInfo.ImportAst]
                     $replacement.Value += [Environment]::NewLine + $value

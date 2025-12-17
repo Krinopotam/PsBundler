@@ -1,7 +1,7 @@
 using module ..\models\bundlerConfig.psm1
 using module ..\models\fileInfo.psm1
 
-Class BundleBuilder {
+class BundleBuilder {
     [BundlerConfig]$_config
 
     BundleBuilder ([BundlerConfig]$config) {
@@ -34,6 +34,9 @@ Class BundleBuilder {
         $result = ""
         if ($replacementsInfo.headerComments) { $result += ( $replacementsInfo.headerComments + [Environment]::NewLine * 2) }
 
+        $assemblies = $this.getNamespacesString($replacementsInfo.assemblies)
+        if ($assemblies) { $result += ($assemblies + [Environment]::NewLine * 2) }
+
         $namespaces = $this.getNamespacesString($replacementsInfo.namespaces)
         if ($namespaces) { $result += ($namespaces + [Environment]::NewLine * 2) }
 
@@ -46,6 +49,10 @@ Class BundleBuilder {
         if ($classes) { $result += ($classes + [Environment]::NewLine * 2) }
 
         return $result
+    }
+
+    [string]getAssembliesString ([System.Collections.Specialized.OrderedDictionary]$assemblies) {
+        return $assemblies.Values -join [Environment]::NewLine
     }
 
     [string]getNamespacesString ([System.Collections.Specialized.OrderedDictionary]$namespaces) {
@@ -65,7 +72,7 @@ Class BundleBuilder {
             if ($file.isEntry) { return $file }
         }
         
-        Throw "Entry file is not found in imports map"
+        throw "Entry file is not found in imports map"
     }
 
     [hashtable[]]normalizeReplacements([hashtable[]] $replacements) {

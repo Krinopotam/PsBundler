@@ -66,16 +66,19 @@ $moduleInfoFromScriptBlock = New-Object System.Management.Automation.PSModuleInf
 & { Import-Module $moduleInfoFromScriptBlock -Scope Local } #>
 
 
-& {Import-Module "$PSScriptRoot\module1.psm1"}
-& {Import-Module "$PSScriptRoot\module2.psm1"}
+#& {Import-Module "$PSScriptRoot\module1.psm1"}
+#& {Import-Module "$PSScriptRoot\module2.psm1"}
+Using Module ".\module1.psm1"
+#Using Module ".\module2.psm1"
 
 Get-Command Use-Test -All
 
+Get-ModuleName
 
 # $mod1.Invoke({ Use-Test })
 # $mod2.Invoke({ Use-Test })
-module1\Use-Test
-module2\Use-Test
+#module1\Use-Test
+#module2\Use-Test
 
 #Show-AstViewer
 

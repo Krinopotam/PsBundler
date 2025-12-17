@@ -16,6 +16,7 @@ class Replacer {
     [hashtable]getReplacements([System.Collections.Specialized.OrderedDictionary]$importsMap) {
         $replacementsMap = @{}
         $namespaces = [System.Collections.Specialized.OrderedDictionary]::new()
+        $assemblies = [System.Collections.Specialized.OrderedDictionary]::new()
         $addTypes = [System.Collections.Specialized.OrderedDictionary]::new()
         $classes = [System.Collections.Specialized.OrderedDictionary]::new()
         $headerComments = ""
@@ -32,7 +33,10 @@ class Replacer {
 
             # Fill import replacements
             $this.fillImportReplacements($file, $replacements)
-            
+
+            # Assemblies replacements
+            $this.fillAssembliesReplacements($file, $assemblies, $replacements)
+
             # Namespaces replacements
             $this.fillNamespacesReplacements($file, $namespaces, $replacements)
 
@@ -45,6 +49,7 @@ class Replacer {
 
         return @{
             headerComments  = $headerComments
+            assemblies      = $assemblies
             namespaces      = $namespaces
             paramBlock      = $paramBlock
             addTypes        = $addTypes
@@ -104,6 +109,16 @@ class Replacer {
             } 
         }
     }
+
+    # Fill replacements for assemblies
+    [void]fillAssembliesReplacements([FileInfo]$file, [System.Collections.Specialized.OrderedDictionary]$assemblies, [System.Collections.ArrayList]$replacements) {
+        $usingStatements = $file.Ast.FindAll( { $args[0] -is [UsingStatementAst] -and $args[0].UsingStatementKind -eq "Assembly" }, $false)
+        foreach ($usingStatement in $usingStatements) {
+            $assemblies[$usingStatement.Name.Extent.ToString()] = "using assembly $($usingStatement.Name.Extent.ToString())"
+            $replacements.Add(@{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" })
+        }
+    }
+
 
     # Fill replacements for namespaces
     [void]fillNamespacesReplacements([FileInfo]$file, [System.Collections.Specialized.OrderedDictionary]$namespaces, [System.Collections.ArrayList]$replacements) {

@@ -8,14 +8,16 @@ Class BundlerConfig {
     [string]$outDir = "build"
     # map of entry points path
     [hashtable]$entryPoints = @{}
-    # add comment with source file names to bundle
-    [bool]$addSourceFileNames = $true
     # strip comments in bundle
     [bool]$stripComments = $true
     # keep comments at the top of entry file
-    [bool]$keepHeaderComments = $true     
+    [bool]$keepHeaderComments = $true
     # whether to obfuscate the output bundle (Natural/Hard)
     [string]$obfuscate = ""
+    # whether to defer classes compilation by wrapping classes source in Invoke-Expression
+    [bool]$deferClassesCompilation = $false
+    # whether to embed deferred classes as base64. If false, classes will be embedded as here-strings (no here-string escaping)
+    [bool]$embedClassesAsBase64 = $false
 
     # Source map variable name used in bundle
     [string]$modulesSourceMapVarName # = "__PS_BUNDLER_MODULES__"
@@ -36,10 +38,11 @@ Class BundlerConfig {
             projectRoot        = ".\"          # project folder root path
             outDir             = "build"       # output folder path in project folder
             entryPoints        = @{}           # list of entry points path
-            addSourceFileNames = $true         # add comment with source file names to bundle
-            stripComments      = $true        # strip comments in bundle
+            stripComments      = $true         # strip comments in bundle
             keepHeaderComments = $true         # keep comments at the top of entry file
             obfuscate          = ""            # whether to obfuscate the output bundle (Natural/Hard)
+            deferClassesCompilation = $false   # whether to defer classes compilation by wrapping classes source in Invoke-Expression
+            embedClassesAsBase64 = $false      # whether to embed deferred classes as base64. If false, classes will be embedded as here-strings (no here-string escaping)
         }
 
         $userConfig = $this.GetConfigFromFile($configPath)
@@ -67,7 +70,6 @@ Class BundlerConfig {
             $this.entryPoints[$entryAbsPath] = $bundleName
         }
 
-        $this.addSourceFileNames = $config.addSourceFileNames
         $this.stripComments = $config.stripComments
         $this.keepHeaderComments = $config.keepHeaderComments
         $this.obfuscate = ""
@@ -75,6 +77,9 @@ Class BundlerConfig {
             if ($config.obfuscate -eq "Natural") { $this.obfuscate = $config.obfuscate } 
             else { $this.obfuscate = "Hard" }
         }
+
+        $this.deferClassesCompilation = $config.deferClassesCompilation
+        $this.embedClassesAsBase64 = $config.embedClassesAsBase64
     }
 
     [PSCustomObject]GetConfigFromFile ([string]$configPath = "") {

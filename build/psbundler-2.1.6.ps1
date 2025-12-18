@@ -1,10 +1,13 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.4
+#Version: 2.1.6
 #requires -Version 5.1
 ##########################################################################################
 
 using namespace System.Management.Automation.Language
+
+[CmdletBinding()]
+param([string]$configPath = "")
 
 Class PsBundler { 
     [object]$_config
@@ -79,10 +82,11 @@ Class BundlerConfig {
     [string]$projectRoot = ".\"    
     [string]$outDir = "build"    
     [hashtable]$entryPoints = @{}    
-    [bool]$addSourceFileNames = $true    
     [bool]$stripComments = $true    
-    [bool]$keepHeaderComments = $true         
-    [string]$obfuscate = ""
+    [bool]$keepHeaderComments = $true    
+    [string]$obfuscate = ""    
+    [bool]$deferClassesCompilation = $false    
+    [bool]$embedClassesAsBase64 = $false
     
     [string]$modulesSourceMapVarName 
 
@@ -101,10 +105,11 @@ Class BundlerConfig {
             projectRoot        = ".\"          
             outDir             = "build"       
             entryPoints        = @{}           
-            addSourceFileNames = $true         
-            stripComments      = $true        
+            stripComments      = $true         
             keepHeaderComments = $true         
             obfuscate          = ""            
+            deferClassesCompilation = $false   
+            embedClassesAsBase64 = $false      
         }
 
         $userConfig = $this.GetConfigFromFile($configPath)
@@ -129,7 +134,6 @@ Class BundlerConfig {
             $this.entryPoints[$entryAbsPath] = $bundleName
         }
 
-        $this.addSourceFileNames = $config.addSourceFileNames
         $this.stripComments = $config.stripComments
         $this.keepHeaderComments = $config.keepHeaderComments
         $this.obfuscate = ""
@@ -137,6 +141,9 @@ Class BundlerConfig {
             if ($config.obfuscate -eq "Natural") { $this.obfuscate = $config.obfuscate } 
             else { $this.obfuscate = "Hard" }
         }
+
+        $this.deferClassesCompilation = $config.deferClassesCompilation
+        $this.embedClassesAsBase64 = $config.embedClassesAsBase64
     }
 
     [PSCustomObject]GetConfigFromFile ([string]$configPath = "") {
@@ -743,6 +750,7 @@ class Replacer {
     [hashtable]getReplacements([System.Collections.Specialized.OrderedDictionary]$importsMap) {
         $replacementsMap = @{}
         $namespaces = [System.Collections.Specialized.OrderedDictionary]::new()
+        $assemblies = [System.Collections.Specialized.OrderedDictionary]::new()
         $addTypes = [System.Collections.Specialized.OrderedDictionary]::new()
         $classes = [System.Collections.Specialized.OrderedDictionary]::new()
         $headerComments = ""
@@ -758,7 +766,9 @@ class Replacer {
             }
             
             $this.fillImportReplacements($file, $replacements)
-                        
+            
+            $this.fillAssembliesReplacements($file, $assemblies, $replacements)
+            
             $this.fillNamespacesReplacements($file, $namespaces, $replacements)
             
             $this.fillAddTypesReplacements($file, $addTypes, $replacements)
@@ -768,6 +778,7 @@ class Replacer {
 
         return @{
             headerComments  = $headerComments
+            assemblies      = $assemblies
             namespaces      = $namespaces
             paramBlock      = $paramBlock
             addTypes        = $addTypes
@@ -819,6 +830,15 @@ class Replacer {
             } 
         }
     }
+    
+    [void]fillAssembliesReplacements([FileInfo]$file, [System.Collections.Specialized.OrderedDictionary]$assemblies, [System.Collections.ArrayList]$replacements) {
+        $usingStatements = $file.Ast.FindAll( { $args[0] -is [UsingStatementAst] -and $args[0].UsingStatementKind -eq "Assembly" }, $false)
+        foreach ($usingStatement in $usingStatements) {
+            $assemblies[$usingStatement.Name.Extent.ToString()] = "using assembly $($usingStatement.Name.Extent.ToString())"
+            $replacements.Add(@{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" })
+        }
+    }
+
     
     [void]fillNamespacesReplacements([FileInfo]$file, [System.Collections.Specialized.OrderedDictionary]$namespaces, [System.Collections.ArrayList]$replacements) {
         $usingStatements = $file.Ast.FindAll( { $args[0] -is [UsingStatementAst] -and $args[0].UsingStatementKind -eq "Namespace" }, $false)
@@ -881,7 +901,7 @@ class Replacer {
     }
 }
 
-Class BundleBuilder {
+class BundleBuilder {
     [BundlerConfig]$_config
 
     BundleBuilder ([BundlerConfig]$config) {
@@ -914,6 +934,9 @@ Class BundleBuilder {
         $result = ""
         if ($replacementsInfo.headerComments) { $result += ( $replacementsInfo.headerComments + [Environment]::NewLine * 2) }
 
+        $assemblies = $this.getNamespacesString($replacementsInfo.assemblies)
+        if ($assemblies) { $result += ($assemblies + [Environment]::NewLine * 2) }
+
         $namespaces = $this.getNamespacesString($replacementsInfo.namespaces)
         if ($namespaces) { $result += ($namespaces + [Environment]::NewLine * 2) }
 
@@ -928,6 +951,10 @@ Class BundleBuilder {
         return $result
     }
 
+    [string]getAssembliesString ([System.Collections.Specialized.OrderedDictionary]$assemblies) {
+        return $assemblies.Values -join [Environment]::NewLine
+    }
+
     [string]getNamespacesString ([System.Collections.Specialized.OrderedDictionary]$namespaces) {
         return $namespaces.Values -join [Environment]::NewLine
     }
@@ -937,7 +964,31 @@ Class BundleBuilder {
     }
 
     [string]getClassesString ([System.Collections.Specialized.OrderedDictionary]$classes) {
-        return $classes.Values -join ([Environment]::NewLine + [Environment]::NewLine)
+        if ($classes.Count -eq 0) { return "" }
+        $classesStr = $classes.Values -join ([Environment]::NewLine + [Environment]::NewLine)
+
+        if (-not $this._config.deferClassesCompilation) { return $classesStr }
+
+        $uuid = [Guid]::NewGuid().ToString("N")
+                
+        if (-not $this._config.embedClassesAsBase64) {
+            return "`$__CLASSES_SOURCE_$uuid = @'" + [Environment]::NewLine `
+                + $classesStr + [Environment]::NewLine `
+                + "'@" + [Environment]::NewLine `
+                + "Invoke-Expression `$__CLASSES_SOURCE_$uuid" + [Environment]::NewLine `
+                + "`$__CLASSES_SOURCE_$uuid = `$null"
+        }
+
+        $bytes = [Text.Encoding]::UTF8.GetBytes($classesStr)
+        $classesStr = [Convert]::ToBase64String($bytes)
+        
+        return "`$__CLASSES_B64_$uuid = '$classesStr'" + [Environment]::NewLine `
+            + "`$__CLASSES_BYTES_$uuid = [System.Convert]::FromBase64String(`$__CLASSES_B64_$uuid)" + [Environment]::NewLine `
+            + "`$__CLASSES_SOURCE_$uuid = [System.Text.Encoding]::UTF8.GetString(`$__CLASSES_BYTES_$uuid)" + [Environment]::NewLine `
+            + "Invoke-Expression `$__CLASSES_SOURCE_$uuid" + [Environment]::NewLine `
+            + "`$__CLASSES_BYTES_$uuid = `$null" + [Environment]::NewLine `
+            + "`$__CLASSES_SOURCE_$uuid = `$null" + [Environment]::NewLine `
+            + "`$__CLASSES_B64_$uuid = `$null"
     }
 
     [FileInfo]getEntryFile ([hashtable]$importsMap) {
@@ -945,7 +996,7 @@ Class BundleBuilder {
             if ($file.isEntry) { return $file }
         }
         
-        Throw "Entry file is not found in imports map"
+        throw "Entry file is not found in imports map"
     }
 
     [hashtable[]]normalizeReplacements([hashtable[]] $replacements) {        
@@ -993,7 +1044,7 @@ Class BundleBuilder {
             $sb.Remove($r.Start, $r.Length)
             $sb.Insert($r.Start, $r.Value)
         }
-        return $sb.ToString()
+        return $sb.ToString().Trim()
     }
 
     [string]getModulesContent([FileInfo]$entryFile, [hashtable]$replacementsInfo) {
@@ -1015,13 +1066,16 @@ Class BundleBuilder {
             }
         }
 
+        $processed[$file.path] = $true
+                
         if ($file.typesOnly) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
         $source = $this.PrepareSource($file, $replacementsInfo.replacementsMap[$file.id])
+        if (-not $source) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
+        
         if (-not $file.isEntry) {
             $source = '$global:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source, "    ")
         }
 
-        $processed[$file.path] = $true
         $contentList.Add($source)
         Write-Host "        File '$($file.path)' processed." -ForegroundColor Green
         return
@@ -1934,16 +1988,10 @@ Class FuncNameGenerator {
 }
 
 
-$global:__MODULES_27523e20aa3d46149df2396860c44fcb = @{}
+$global:__MODULES_9d9cf41c33f14e05a4096b19bac9dfbe = @{}
 
 
-$global:__MODULES_27523e20aa3d46149df2396860c44fcb["6068719a5c89451a892f4ddd3555551e"] = {
-    
-    
-    
-    
-    
-    
+$global:__MODULES_9d9cf41c33f14e05a4096b19bac9dfbe["0f9c03bef0ce4d808f5a1411e61b4148"] = {
     function Invoke-PSBundler {
         [CmdletBinding()]
         param(
@@ -1951,10 +1999,7 @@ $global:__MODULES_27523e20aa3d46149df2396860c44fcb["6068719a5c89451a892f4ddd3555
         )
         $null = [PsBundler]::new($configPath) 
     }
-    
 }
 
-Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_27523e20aa3d46149df2396860c44fcb["6068719a5c89451a892f4ddd3555551e"]) -Force -DisableNameChecking
-Invoke-PsBundler -verbose
-
-
+Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_9d9cf41c33f14e05a4096b19bac9dfbe["0f9c03bef0ce4d808f5a1411e61b4148"]) -Force -DisableNameChecking
+Invoke-PsBundler $configPath

@@ -4,7 +4,8 @@
 	"entryPoints": {
 		"src\\run.ps1": "psbundler.ps1"
 	},
-	"addSourceFileNames": true,
 	"stripComments": true,
-	"keepHeaderComments": true
+	"keepHeaderComments": true,
+	"deferClassesCompilation": false,
+	"embedClassesAsBase64": false
 }

@@ -1,10 +1,13 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.5
+#Version: 2.1.6
 #requires -Version 5.1
 ##########################################################################################
 
 using namespace System.Management.Automation.Language
+
+[CmdletBinding()]
+param([string]$configPath = "")
 
 Class PsBundler { 
     [object]$_config
@@ -79,10 +82,11 @@ Class BundlerConfig {
     [string]$projectRoot = ".\"    
     [string]$outDir = "build"    
     [hashtable]$entryPoints = @{}    
-    [bool]$addSourceFileNames = $true    
     [bool]$stripComments = $true    
-    [bool]$keepHeaderComments = $true         
-    [string]$obfuscate = ""
+    [bool]$keepHeaderComments = $true    
+    [string]$obfuscate = ""    
+    [bool]$deferClassesCompilation = $false    
+    [bool]$embedClassesAsBase64 = $false
     
     [string]$modulesSourceMapVarName 
 
@@ -101,10 +105,11 @@ Class BundlerConfig {
             projectRoot        = ".\"          
             outDir             = "build"       
             entryPoints        = @{}           
-            addSourceFileNames = $true         
-            stripComments      = $true        
+            stripComments      = $true         
             keepHeaderComments = $true         
             obfuscate          = ""            
+            deferClassesCompilation = $false   
+            embedClassesAsBase64 = $false      
         }
 
         $userConfig = $this.GetConfigFromFile($configPath)
@@ -129,7 +134,6 @@ Class BundlerConfig {
             $this.entryPoints[$entryAbsPath] = $bundleName
         }
 
-        $this.addSourceFileNames = $config.addSourceFileNames
         $this.stripComments = $config.stripComments
         $this.keepHeaderComments = $config.keepHeaderComments
         $this.obfuscate = ""
@@ -137,6 +141,9 @@ Class BundlerConfig {
             if ($config.obfuscate -eq "Natural") { $this.obfuscate = $config.obfuscate } 
             else { $this.obfuscate = "Hard" }
         }
+
+        $this.deferClassesCompilation = $config.deferClassesCompilation
+        $this.embedClassesAsBase64 = $config.embedClassesAsBase64
     }
 
     [PSCustomObject]GetConfigFromFile ([string]$configPath = "") {
@@ -957,7 +964,31 @@ class BundleBuilder {
     }
 
     [string]getClassesString ([System.Collections.Specialized.OrderedDictionary]$classes) {
-        return $classes.Values -join ([Environment]::NewLine + [Environment]::NewLine)
+        if ($classes.Count -eq 0) { return "" }
+        $classesStr = $classes.Values -join ([Environment]::NewLine + [Environment]::NewLine)
+
+        if (-not $this._config.deferClassesCompilation) { return $classesStr }
+
+        $uuid = [Guid]::NewGuid().ToString("N")
+                
+        if (-not $this._config.embedClassesAsBase64) {
+            return "`$__CLASSES_SOURCE_$uuid = @'" + [Environment]::NewLine `
+                + $classesStr + [Environment]::NewLine `
+                + "'@" + [Environment]::NewLine `
+                + "Invoke-Expression `$__CLASSES_SOURCE_$uuid" + [Environment]::NewLine `
+                + "`$__CLASSES_SOURCE_$uuid = `$null"
+        }
+
+        $bytes = [Text.Encoding]::UTF8.GetBytes($classesStr)
+        $classesStr = [Convert]::ToBase64String($bytes)
+        
+        return "`$__CLASSES_B64_$uuid = '$classesStr'" + [Environment]::NewLine `
+            + "`$__CLASSES_BYTES_$uuid = [System.Convert]::FromBase64String(`$__CLASSES_B64_$uuid)" + [Environment]::NewLine `
+            + "`$__CLASSES_SOURCE_$uuid = [System.Text.Encoding]::UTF8.GetString(`$__CLASSES_BYTES_$uuid)" + [Environment]::NewLine `
+            + "Invoke-Expression `$__CLASSES_SOURCE_$uuid" + [Environment]::NewLine `
+            + "`$__CLASSES_BYTES_$uuid = `$null" + [Environment]::NewLine `
+            + "`$__CLASSES_SOURCE_$uuid = `$null" + [Environment]::NewLine `
+            + "`$__CLASSES_B64_$uuid = `$null"
     }
 
     [FileInfo]getEntryFile ([hashtable]$importsMap) {
@@ -1013,7 +1044,7 @@ class BundleBuilder {
             $sb.Remove($r.Start, $r.Length)
             $sb.Insert($r.Start, $r.Value)
         }
-        return $sb.ToString()
+        return $sb.ToString().Trim()
     }
 
     [string]getModulesContent([FileInfo]$entryFile, [hashtable]$replacementsInfo) {
@@ -1035,13 +1066,16 @@ class BundleBuilder {
             }
         }
 
+        $processed[$file.path] = $true
+                
         if ($file.typesOnly) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
         $source = $this.PrepareSource($file, $replacementsInfo.replacementsMap[$file.id])
+        if (-not $source) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
+        
         if (-not $file.isEntry) {
             $source = '$global:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source, "    ")
         }
 
-        $processed[$file.path] = $true
         $contentList.Add($source)
         Write-Host "        File '$($file.path)' processed." -ForegroundColor Green
         return
@@ -1954,16 +1988,10 @@ Class FuncNameGenerator {
 }
 
 
-$global:__MODULES_3181c3997c794d1a982ebffa6048afcc = @{}
+$global:__MODULES_ad5bb1bb24784c36945fbf2387c0048a = @{}
 
 
-$global:__MODULES_3181c3997c794d1a982ebffa6048afcc["4e1ec9af612a4661aa76afcce7249ce4"] = {
-    
-    
-    
-    
-    
-    
+$global:__MODULES_ad5bb1bb24784c36945fbf2387c0048a["cac0a026b94c4c828f0ea70c24679cb5"] = {
     function Invoke-PSBundler {
         [CmdletBinding()]
         param(
@@ -1971,10 +1999,7 @@ $global:__MODULES_3181c3997c794d1a982ebffa6048afcc["4e1ec9af612a4661aa76afcce724
         )
         $null = [PsBundler]::new($configPath) 
     }
-    
 }
 
-Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_3181c3997c794d1a982ebffa6048afcc["4e1ec9af612a4661aa76afcce7249ce4"]) -Force -DisableNameChecking
-Invoke-PsBundler -verbose
-
-
+Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_ad5bb1bb24784c36945fbf2387c0048a["cac0a026b94c4c828f0ea70c24679cb5"]) -Force -DisableNameChecking
+Invoke-PsBundler $configPath

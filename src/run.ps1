@@ -1,11 +1,14 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.5
+#Version: 2.1.6
 #requires -Version 5.1
 ##########################################################################################
 
+[CmdletBinding()]
+param([string]$configPath = "")
+
 Import-Module "$PSScriptRoot\PsBundler.psm1" -Force
-Invoke-PsBundler -verbose
+Invoke-PsBundler $configPath
 
 #Invoke-PsBundler  -configPath ".\posts\ps_imports\psbundler.config.json" -verbose
 

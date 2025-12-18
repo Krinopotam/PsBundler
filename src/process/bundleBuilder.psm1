@@ -64,7 +64,31 @@ class BundleBuilder {
     }
 
     [string]getClassesString ([System.Collections.Specialized.OrderedDictionary]$classes) {
-        return $classes.Values -join ([Environment]::NewLine + [Environment]::NewLine)
+        if ($classes.Count -eq 0) { return "" }
+        $classesStr = $classes.Values -join ([Environment]::NewLine + [Environment]::NewLine)
+
+        if (-not $this._config.deferClassesCompilation) { return $classesStr }
+
+        $uuid = [Guid]::NewGuid().ToString("N")
+                
+        if (-not $this._config.embedClassesAsBase64) {
+            return "`$__CLASSES_SOURCE_$uuid = @'" + [Environment]::NewLine `
+                + $classesStr + [Environment]::NewLine `
+                + "'@" + [Environment]::NewLine `
+                + "Invoke-Expression `$__CLASSES_SOURCE_$uuid" + [Environment]::NewLine `
+                + "`$__CLASSES_SOURCE_$uuid = `$null"
+        }
+
+        $bytes = [Text.Encoding]::UTF8.GetBytes($classesStr)
+        $classesStr = [Convert]::ToBase64String($bytes)
+        
+        return "`$__CLASSES_B64_$uuid = '$classesStr'" + [Environment]::NewLine `
+            + "`$__CLASSES_BYTES_$uuid = [System.Convert]::FromBase64String(`$__CLASSES_B64_$uuid)" + [Environment]::NewLine `
+            + "`$__CLASSES_SOURCE_$uuid = [System.Text.Encoding]::UTF8.GetString(`$__CLASSES_BYTES_$uuid)" + [Environment]::NewLine `
+            + "Invoke-Expression `$__CLASSES_SOURCE_$uuid" + [Environment]::NewLine `
+            + "`$__CLASSES_BYTES_$uuid = `$null" + [Environment]::NewLine `
+            + "`$__CLASSES_SOURCE_$uuid = `$null" + [Environment]::NewLine `
+            + "`$__CLASSES_B64_$uuid = `$null"
     }
 
     [FileInfo]getEntryFile ([hashtable]$importsMap) {
@@ -125,7 +149,7 @@ class BundleBuilder {
             $sb.Remove($r.Start, $r.Length)
             $sb.Insert($r.Start, $r.Value)
         }
-        return $sb.ToString()
+        return $sb.ToString().Trim()
     }
 
     [string]getModulesContent([FileInfo]$entryFile, [hashtable]$replacementsInfo) {
@@ -147,13 +171,16 @@ class BundleBuilder {
             }
         }
 
+        $processed[$file.path] = $true
+                
         if ($file.typesOnly) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
         $source = $this.PrepareSource($file, $replacementsInfo.replacementsMap[$file.id])
+        if (-not $source) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
+        
         if (-not $file.isEntry) {
             $source = '$global:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source, "    ")
         }
 
-        $processed[$file.path] = $true
         $contentList.Add($source)
         Write-Host "        File '$($file.path)' processed." -ForegroundColor Green
         return

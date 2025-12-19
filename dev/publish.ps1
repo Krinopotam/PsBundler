@@ -25,9 +25,9 @@ $include = @(
     'models',
     'parsers',
     'process',
-    '..\icons\psbundler_128.png',
-    '..\LICENSE',
-    '..\README.md'
+    'icons\psbundler_128.png',
+    'LICENSE',
+    'README.md'
 )
 
 Copy-ForPublish -SourcePath $modulePath -PublishPath $publishPath -Include $include

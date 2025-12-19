@@ -16,7 +16,7 @@ The module relies on **PowerShell AST analysis**, ensuring correct dependency re
 
 - 📦 Bundle PowerShell projects into a **single file**
 - 🧠 Dependency resolution via AST analysis
-- 🧩 Correct handling of `using`, `Import-Module`, `dot` and `ampersand` notations imports, functions, and classes, etc
+- 🧩 Correct handling of `using`, `Import-Module`, dot-sourcing (`.`), call operator (`&`), functions, and classes
 - 🔁 Detection and reporting of **cyclic imports**
 - ✂️ Comment stripping
 - 🧾 Entry-file header comment preservation
@@ -62,15 +62,26 @@ Import-Module PsBundler
    $env:USERPROFILE\Documents\WindowsPowerShell\Modules\PsBundler
    ```
 
+### 📜 Option 3 — Standalone bundled script
+
+PsBundler is also distributed as a **self-contained bundled script**, generated using PsBundler itself.
+
+Prebuilt standalone bundles are published on the
+[latest GitHub release](https://github.com/Krinopotam/PsBundler/releases/latest).
+
+This standalone script contains the full PsBundler implementation and does **not require module installation or import**.
+
 ---
 
-## 🚀 Usage
+## 🚀 Usage (Module)
 
 ### Basic workflow
 
-1. Create a configuration file named **`psbundler.config.json`**. At minimum, the configuration **must define** `projectRoot`, `outDir`, and `entryPoints`:
-2. Place it in the same directory as your project entry script  
-3. Run PsBundler from the project root
+1. Create a configuration file named **`psbundler.config.json`**.  
+   At minimum, the configuration must define `projectRoot`, `outDir`, and `entryPoints`.
+2. Ensure the configuration file is located in the directory from which PsBundler is executed  
+   (or specify its path explicitly using `-configPath`).
+3. Run PsBundler from the project root using:
 
 ```powershell
 Invoke-PsBundler
@@ -84,6 +95,47 @@ The output file name is taken from the **value of the `entryPoints` map**, and e
 - functions, modules, and classes in the correct order
 
 ---
+
+## 🚀 Usage (Standalone Script)
+
+PsBundler can also be used as a **standalone bundled script**.  
+This mode does not require module installation or import.
+
+### Recommended setup
+
+It is recommended to place:
+
+- the standalone script (`psbundler-X.X.X.ps1`)
+- the configuration file (`psbundler.config.json`)
+
+together in the **root directory of your project**.
+
+### Execution
+
+You can run the script from the PowerShell command line:
+
+```powershell
+./psbundler-X.X.X.ps1
+```
+
+or explicitly specify the configuration path:
+
+```powershell
+./psbundler-X.X.X.ps1 -configPath path/to/psbundler.config.json
+```
+
+On Windows, the standalone script can also be executed via the **context menu**
+by right-clicking the file `psbundler-X.X.X.ps1` and selecting “**Run with PowerShell**”.
+
+The standalone script supports the same configuration file format and command-line parameters as the module version, including `-configPath`.
+
+In addition to executing the standalone script as a file, PsBundler can also be used by **copying the entire contents of the bundled script and pasting it directly into a PowerShell console**.
+
+This option is useful when:
+
+- installing modules is not possible or undesirable
+- a fully portable, single-file solution is required
+- PsBundler needs to be used in restricted or isolated environments
 
 ## ⚙️ Configuration
 
@@ -110,15 +162,15 @@ A custom configuration file path can be specified explicitly using the **`-confi
 ### Configuration options
 
 | Option | Type | Description |
-| ------ | ---- | ------------- |
-| `projectRoot` | string | Project root directory (relative to the current working directory from which PsBundler is executed) |
+| ------ | ---- | ----------- |
+| `projectRoot` | string | Project root directory (relative to the **configuration file path**) |
 | `outDir` | string | Output directory (relative to `projectRoot`) |
-| `entryPoints` | object | Entry point map (`sourceFile → outputFile`) |
-| `stripComments` | bool | Remove comments from the bundled output |
-| `keepHeaderComments` | bool | Preserve header comment blocks from entry files |
-| `obfuscate` | bool / string | Obfuscation mode: `true` (same as `"Hard"`), `"Natural"`, or `"Hard"` |
-| `deferClassesCompilation` | bool | Defer class compilation using `Invoke-Expression` |
-| `embedClassesAsBase64` | bool | Embed deferred classes as Base64 instead of here-strings |
+| `entryPoints` | object | Entry point map (`sourceFile → outputFile`, relative to `projectRoot`) |
+| `stripComments` | bool | Removes comments from the bundled output |
+| `keepHeaderComments` | bool | Preserves header comment blocks from entry files |
+| `obfuscate` | bool / string | Obfuscation mode: `true` (equivalent to `"Hard"`), `"Natural"`, or `"Hard"` |
+| `deferClassesCompilation` | bool | Defers class compilation using `Invoke-Expression` |
+| `embedClassesAsBase64` | bool | Embeds deferred classes as Base64 instead of here-strings |
 
 ---
 
@@ -126,7 +178,7 @@ A custom configuration file path can be specified explicitly using the **`-confi
 
 #### `projectRoot`
 
-Defines the **project root directory**, relative to the **current working directory** from which PsBundler is executed.  
+Defines the **project root directory**, relative to the **configuration file path**.  
 All source paths, including entry points and dependencies, are resolved relative to this directory.
 
 ---
@@ -143,7 +195,7 @@ If the directory does not exist, it will be created automatically.
 
 Defines the set of entry scripts to bundle.
 
-Each entry point produces **its own bundled output file**.  This allows bundling multiple independent entry scripts in a single project.
+Each entry point produces **its own bundled output file**, allowing multiple independent entry scripts to be bundled within a single project.
 
 The map key represents the **source script path** (relative to `projectRoot`), while the value defines the **output file name** (relative to `projectRoot`). If the entry script contains a version specified in its header comments (for example: `# Version: 1.2.3`), this version will be **automatically appended to the bundle file name**.
 
@@ -186,7 +238,7 @@ Supported modes:
 Controls how PowerShell classes are handled during bundling.
 
 PowerShell classes perform **type validation at parse time**, meaning that all referenced types must be known and available **before the script is executed**.  
-At the same time, `Add-Type` and even `using assembly` (PowerShell bug) load external assemblies **at runtime**, not during parsing.
+At the same time, `Add-Type` and even `using assembly` load external assemblies **at runtime**, not during parsing.
 
 This mismatch can cause situations where:
 

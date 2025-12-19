@@ -8,7 +8,7 @@
 param([string]$configPath = "")
 
 Import-Module "$PSScriptRoot\PsBundler.psm1" -Force
-Invoke-PsBundler $configPath
+Invoke-PsBundler -configPath $configPath
 
 #Invoke-PsBundler  -configPath ".\posts\ps_imports\psbundler.config.json" -verbose
 

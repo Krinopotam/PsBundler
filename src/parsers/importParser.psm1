@@ -153,15 +153,15 @@ Class ImportParser {
 
     [string] ResolveImportPath(
         [FileInfo]$caller,                             # caller file info
-        [string] $ImportType,                          # import kind ("dot", "ampersand", "module", "using")
-        [string] $ImportPath                           # path string from the import statement
+        [string] $importType,                          # import kind ("dot", "ampersand", "module", "using")
+        [string] $importPath                           # path string from the import statement
     ) {
-        if (-not $ImportPath) { return $null }
+        if (-not $importPath) { return $null }
 
         $callerPath = $caller.path
         $projectRoot = $this._config.projectRoot
 
-        $Resolved = $ImportPath
+        $resolved = $importPath
 
         $callerDir = [System.IO.Path]::GetDirectoryName($callerPath)
         $pathVars = @{
@@ -173,19 +173,19 @@ Class ImportParser {
         # Expand ${PSScriptRoot} or $PSScriptRoot form first to avoid partial matches
         foreach ($key in $pathVars.Keys) {
             $value = $pathVars[$key]
-            $Resolved = $Resolved -replace ("\$\{?$key\}?"), $value
+            $resolved = $resolved -replace ("\$\{?$key\}?"), $value
         }
 
         # Tilde (~) expansion at the start of the path
-        if ($Resolved -match '^(~)([\\/]|$)') { $Resolved = $Resolved -replace '^~', $pathVars['HOME'] }
+        if ($resolved -match '^(~)([\\/]|$)') { $resolved = $resolved -replace '^~', $pathVars['HOME'] }
 
         # --- absolute? normalize and return -------------------------------------
-        if ([System.IO.Path]::IsPathRooted($Resolved)) { return [System.IO.Path]::GetFullPath($Resolved) }
+        if ([System.IO.Path]::IsPathRooted($resolved)) { return [System.IO.Path]::GetFullPath($resolved) }
 
         # --- choose base dir per import semantics (bundler rules) ---------------
         # dot, ampersand, module -> session PWD; in bundler we emulate it as ProjectRoot
         # using -> relative to the file where it's written
-        $baseDir = switch ($ImportType) {
+        $baseDir = switch ($importType) {
             'using' { $callerDir }
             'dot' { $projectRoot }
             'ampersand' { $projectRoot }
@@ -193,7 +193,7 @@ Class ImportParser {
         }
 
         # --- combine and normalize ----------------------------------------------
-        $combined = [System.IO.Path]::Combine($baseDir, $Resolved)
+        $combined = [System.IO.Path]::Combine($baseDir, $resolved)
         return [System.IO.Path]::GetFullPath($combined)
     }
 

@@ -158,21 +158,19 @@ class BundlerConfig {
     }
 
     [PSCustomObject]GetConfigFromFile () {
-        if ((Test-Path $this.configPath)) {
-            try {
-                $config = Get-Content $this.configPath -Raw | ConvertFrom-Json
-                $configHashTable = $this._objectHelpers.ConvertToHashtable($config)
-                Write-Host "Using config: $($this.configPath)"
-                return $configHashTable
-            }
-            catch {
-                Write-Host "Error reading config file: $($_.Exception.Message)" -ForegroundColor Red
-                exit 1
-            }
+        if (-not (Test-Path $this.configPath)) { 
+            throw "HANDLED: Config file not found: $($this.configPath)"
         }
-    
-        Write-Host "Config file not found: $($this.configPath)" -ForegroundColor Red
-        exit 1
+        
+        try {
+            $config = Get-Content $this.configPath -Raw | ConvertFrom-Json
+            $configHashTable = $this._objectHelpers.ConvertToHashtable($config)
+            Write-Host "Using config: $($this.configPath)"
+            return $configHashTable
+        }
+        catch {
+            throw "HANDLED: Error reading config file: $($_.Exception.Message)"
+        }
     }
 }
 
@@ -412,7 +410,7 @@ Class FileInfo {
             if (-not (Test-Path $filePath)) {
                 $consumerStr = ""
                 if ($consumerInfo) { $consumerStr = "imported by $($consumerInfo.file.path)" }
-                Throw "File not found: $($filePath) $consumerStr"
+                Throw "File not found: $filePath $consumerStr"
             }
 
             $source = Get-Content $filePath -Raw 
@@ -429,7 +427,7 @@ Class FileInfo {
                     $lineNum = $source.Substring(0, $err.Extent.StartOffset).Split("`n").Count
                     Write-Host ("[{0}] {1}" -f $lineNum, $err.Message) -ForegroundColor Yellow
                 }
-                throw "Syntax errors in script."
+                throw "Syntax errors in script '$filePath'"
             }
 
             return @{
@@ -438,8 +436,7 @@ Class FileInfo {
             }
         }
         catch {
-            Write-Error "Error parsing file: $($_.Exception.Message)"
-            exit
+            throw "HANDLED: Error parsing file: $($_.Exception.Message)"
         }
     }
 
@@ -954,8 +951,7 @@ class BundleBuilder {
             return $outputPath
         }
         catch {
-            Write-Host "Error creating bundle: $($_.Exception.Message)" -ForegroundColor Red
-            exit
+            throw "HANDLED: Error creating bundle: $($_.Exception.Message)"
         }
     }
 
@@ -2017,10 +2013,10 @@ Class FuncNameGenerator {
 }
 
 
-$global:__MODULES_3c70a9f8613c4573ad17d1b8f9ba0cb4 = @{}
+$global:__MODULES_c481812ceb91481e9fcf22d7cfe9f35d = @{}
 
 
-$global:__MODULES_3c70a9f8613c4573ad17d1b8f9ba0cb4["a18baee532534b808bc9562bb1014ad2"] = {
+$global:__MODULES_c481812ceb91481e9fcf22d7cfe9f35d["dec18d6262c64288bab546fabf658d62"] = {
     function Invoke-PSBundler {
         [CmdletBinding()]
         param(
@@ -2030,5 +2026,5 @@ $global:__MODULES_3c70a9f8613c4573ad17d1b8f9ba0cb4["a18baee532534b808bc9562bb101
     }
 }
 
-Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_3c70a9f8613c4573ad17d1b8f9ba0cb4["a18baee532534b808bc9562bb1014ad2"]) -Force -DisableNameChecking
+Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_c481812ceb91481e9fcf22d7cfe9f35d["dec18d6262c64288bab546fabf658d62"]) -Force -DisableNameChecking
 Invoke-PsBundler -configPath $configPath

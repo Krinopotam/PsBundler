@@ -25,8 +25,7 @@ class BundleBuilder {
             return $outputPath
         }
         catch {
-            Write-Host "Error creating bundle: $($_.Exception.Message)" -ForegroundColor Red
-            exit
+            throw "HANDLED: Error creating bundle: $($_.Exception.Message)"
         }
     }
 

@@ -95,20 +95,18 @@ class BundlerConfig {
     }
 
     [PSCustomObject]GetConfigFromFile () {
-        if ((Test-Path $this.configPath)) {
-            try {
-                $config = Get-Content $this.configPath -Raw | ConvertFrom-Json
-                $configHashTable = $this._objectHelpers.ConvertToHashtable($config)
-                Write-Host "Using config: $($this.configPath)"
-                return $configHashTable
-            }
-            catch {
-                Write-Host "Error reading config file: $($_.Exception.Message)" -ForegroundColor Red
-                exit 1
-            }
+        if (-not (Test-Path $this.configPath)) { 
+            throw "HANDLED: Config file not found: $($this.configPath)"
         }
-    
-        Write-Host "Config file not found: $($this.configPath)" -ForegroundColor Red
-        exit 1
+        
+        try {
+            $config = Get-Content $this.configPath -Raw | ConvertFrom-Json
+            $configHashTable = $this._objectHelpers.ConvertToHashtable($config)
+            Write-Host "Using config: $($this.configPath)"
+            return $configHashTable
+        }
+        catch {
+            throw "HANDLED: Error reading config file: $($_.Exception.Message)"
+        }
     }
 }

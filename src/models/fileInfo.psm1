@@ -42,7 +42,7 @@ Class FileInfo {
             if (-not (Test-Path $filePath)) {
                 $consumerStr = ""
                 if ($consumerInfo) { $consumerStr = "imported by $($consumerInfo.file.path)" }
-                Throw "File not found: $($filePath) $consumerStr"
+                Throw "File not found: $filePath $consumerStr"
             }
 
             $source = Get-Content $filePath -Raw 
@@ -60,7 +60,7 @@ Class FileInfo {
                     $lineNum = $source.Substring(0, $err.Extent.StartOffset).Split("`n").Count
                     Write-Host ("[{0}] {1}" -f $lineNum, $err.Message) -ForegroundColor Yellow
                 }
-                throw "Syntax errors in script."
+                throw "Syntax errors in script '$filePath'"
             }
 
             return @{
@@ -69,8 +69,7 @@ Class FileInfo {
             }
         }
         catch {
-            Write-Error "Error parsing file: $($_.Exception.Message)"
-            exit
+            throw "HANDLED: Error parsing file: $($_.Exception.Message)"
         }
     }
 

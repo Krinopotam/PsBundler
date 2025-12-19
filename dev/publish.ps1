@@ -25,11 +25,10 @@ $include = @(
     'models',
     'parsers',
     'process',
-    'icons\psbundler_128.png',
-    'LICENSE',
-    'README.md'
+    '..\LICENSE',
+    '..\README.md'
 )
 
 Copy-ForPublish -SourcePath $modulePath -PublishPath $publishPath -Include $include
 
-#Publish-PSResource -Path $publishPath -ApiKey $nuGetApiKey -Repository PSGallery -Verbose
+Publish-PSResource -Path $publishPath -ApiKey $nuGetApiKey -Repository PSGallery -Verbose

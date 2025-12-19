@@ -13,19 +13,23 @@ if (-not (Get-PSResourceRepository -Name PSGallery -ErrorAction SilentlyContinue
 }
 
 
-$modulePath = Resolve-Path ".\"
-$publishPath = Join-Path $modulePath 'publish'
+$modulePath = Resolve-Path ".\src"
+$publishPath = '.\publish'
 
 $include = @(
-    'PsAstViewer.psd1',
-    'PsAstViewer.psm1',
+    'PsBundler.psd1',
+    'PsBundler.psm1',
+    'classes',
+    'extra',
+    'helpers',
     'models',
-    'ui',
-    'utils',
-    'LICENSE',
-    'README.md'
+    'parsers',
+    'process',
+    '..\icons\psbundler_128.png',
+    '..\LICENSE',
+    '..\README.md'
 )
 
 Copy-ForPublish -SourcePath $modulePath -PublishPath $publishPath -Include $include
 
-Publish-PSResource -Path $publishPath -ApiKey $nuGetApiKey -Repository PSGallery -Verbose
+#Publish-PSResource -Path $publishPath -ApiKey $nuGetApiKey -Repository PSGallery -Verbose

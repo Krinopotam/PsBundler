@@ -22,7 +22,7 @@
             Tags       = @('powershell', 'bundler', 'builder', 'compiler', 'module', 'scripts', 'automation', 'devtools', 'build', 'packaging', 'merge', 'tooling')
             LicenseUri = 'https://github.com/Krinopotam/PsBundler/blob/master/LICENSE'
             ProjectUri = 'https://github.com/Krinopotam/PsBundler'
-            # IconUri = ''
+            IconUri = 'https://raw.githubusercontent.com/Krinopotam/PsBundler/main/icons/psbundler_128.png'
             # ReleaseNotes = ''
         }
 

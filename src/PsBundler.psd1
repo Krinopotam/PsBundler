@@ -1,6 +1,6 @@
 ﻿@{
     RootModule        = 'PsBundler.psm1'
-    ModuleVersion     = '2.1.6'
+    ModuleVersion     = '2.1.7'
     GUID              = '5bbc89a0-1efe-45ad-bd20-39e87f3c3373'
     Author            = 'Maxim Zaytsev'
     Copyright         = '(c) 2025 Maxim Zaytsev. All rights reserved.'
@@ -22,7 +22,7 @@
             Tags       = @('powershell', 'bundler', 'builder', 'compiler', 'module', 'scripts', 'automation', 'devtools', 'build', 'packaging', 'merge', 'tooling')
             LicenseUri = 'https://github.com/Krinopotam/PsBundler/blob/master/LICENSE'
             ProjectUri = 'https://github.com/Krinopotam/PsBundler'
-            IconUri = 'https://raw.githubusercontent.com/Krinopotam/PsBundler/main/icons/psbundler_128.png'
+            IconUri = 'https://raw.githubusercontent.com/Krinopotam/PsBundler/main/icons/psbundler_85.png'
             # ReleaseNotes = ''
         }
 

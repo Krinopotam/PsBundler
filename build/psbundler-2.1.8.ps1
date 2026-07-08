@@ -1,6 +1,6 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.7
+#Version: 2.1.8
 #requires -Version 5.1
 ##########################################################################################
 
@@ -421,7 +421,7 @@ Class FileInfo {
             $astVal = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokensVal, [ref]$errors)            
             $realErrors = $errors | Where-Object { $_.ErrorId -notin @('TypeNotFound') }
 
-            if ($realErrors.Count -gt 0) {
+            if ($realErrors -and $realErrors.Count -gt 0) {
                 Write-Host "Found syntax errors in script '$filePath':" -ForegroundColor Red
                 foreach ($err in $realErrors) {
                     $lineNum = $source.Substring(0, $err.Extent.StartOffset).Split("`n").Count
@@ -506,7 +506,7 @@ Class FileInfo {
     }
 }
 
-Class ImportParser {
+class ImportParser {
     [BundlerConfig]$_config
     [AstHelpers]$_astHelper
 
@@ -526,8 +526,11 @@ Class ImportParser {
     
     [hashtable[]]ParseImportModule([FileInfo]$file) {
         $result = @()
-
-        $commandAsts = $file.Ast.FindAll( { $args[0] -is [CommandAst] -and $args[0].CommandElements -and $args[0].CommandElements[0].Value -eq "Import-Module" }, $true)
+        
+        $commandAsts = $file.Ast.FindAll( { 
+                if ($args[0] -is [CommandAst]) { return $args[0].CommandElements.Count -gt 0 -and $args[0].CommandElements[0].Extent.Text -eq "Import-Module" }
+                return $false
+            }, $true)
         if (-not $commandAsts) { return $result }
         
         $type = "Module"
@@ -1027,7 +1030,7 @@ class BundleBuilder {
     [hashtable[]]normalizeReplacements([hashtable[]] $replacements) {        
         [hashtable[]]$sorted = $replacements | Sort-Object { $_['Start'] }
         $normalized = @()
-        if ($sorted.Count -eq 0) { return $normalized }
+        if (-not $sorted -or $sorted.Count -eq 0) { return $normalized }
 
         $current = $sorted[0]
 
@@ -1083,7 +1086,7 @@ class BundleBuilder {
     }
 
     [void]fillModulesContentList([FileInfo]$file, [hashtable]$replacementsInfo, [System.Collections.ArrayList]$contentList, [string]$importType, [hashtable]$processed = @{}) {
-        if ($file.imports.Values.Count -gt 0) {
+        if ($file.imports.Values.Count -and $file.imports.Values.Count -gt 0) {
             foreach ($importInfo in $file.imports.Values) {
                 $importFile = $importInfo.file
                 if ($processed[$importFile.path]) { continue }
@@ -2013,10 +2016,10 @@ Class FuncNameGenerator {
 }
 
 
-$global:__MODULES_6b191eb1c0004542a23961ca82ad21a4 = @{}
+$global:__MODULES_f363217757c04424be1968608368a35d = @{}
 
 
-$global:__MODULES_6b191eb1c0004542a23961ca82ad21a4["b2441d8d473d4cd48a8c9011635a5ea5"] = {
+$global:__MODULES_f363217757c04424be1968608368a35d["28b261852177482a90ddf56bd77dfdbc"] = {
     function Invoke-PSBundler {
         [CmdletBinding()]
         param(
@@ -2026,5 +2029,5 @@ $global:__MODULES_6b191eb1c0004542a23961ca82ad21a4["b2441d8d473d4cd48a8c9011635a
     }
 }
 
-Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_6b191eb1c0004542a23961ca82ad21a4["b2441d8d473d4cd48a8c9011635a5ea5"]) -Force -DisableNameChecking
+Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_f363217757c04424be1968608368a35d["28b261852177482a90ddf56bd77dfdbc"]) -Force -DisableNameChecking
 Invoke-PsBundler -configPath $configPath

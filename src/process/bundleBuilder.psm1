@@ -102,7 +102,7 @@ class BundleBuilder {
         # WORKAROUND: System.Collections.ArrayList may unfold hashtables when sorting. So we must use [hashtable[]]
         [hashtable[]]$sorted = $replacements | Sort-Object { $_['Start'] }
         $normalized = @()
-        if ($sorted.Count -eq 0) { return $normalized }
+        if (-not $sorted -or $sorted.Count -eq 0) { return $normalized }
 
         $current = $sorted[0]
 
@@ -162,7 +162,7 @@ class BundleBuilder {
     }
 
     [void]fillModulesContentList([FileInfo]$file, [hashtable]$replacementsInfo, [System.Collections.ArrayList]$contentList, [string]$importType, [hashtable]$processed = @{}) {
-        if ($file.imports.Values.Count -gt 0) {
+        if ($file.imports.Values.Count -and $file.imports.Values.Count -gt 0) {
             foreach ($importInfo in $file.imports.Values) {
                 $importFile = $importInfo.file
                 if ($processed[$importFile.path]) { continue }

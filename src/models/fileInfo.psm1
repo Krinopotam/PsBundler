@@ -54,7 +54,7 @@ Class FileInfo {
             #$realErrors = $errors | Where-Object { $_.ErrorId -notin @('TypeNotFound', 'VariableNotFound', 'CommandNotFound') }
             $realErrors = $errors | Where-Object { $_.ErrorId -notin @('TypeNotFound') }
 
-            if ($realErrors.Count -gt 0) {
+            if ($realErrors -and $realErrors.Count -gt 0) {
                 Write-Host "Found syntax errors in script '$filePath':" -ForegroundColor Red
                 foreach ($err in $realErrors) {
                     $lineNum = $source.Substring(0, $err.Extent.StartOffset).Split("`n").Count

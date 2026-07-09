@@ -1,6 +1,6 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.8
+#Version: 2.1.9
 #requires -Version 5.1
 ##########################################################################################
 
@@ -835,10 +835,10 @@ class Replacer {
             if ($importFile.typesOnly) { continue }
 
             if ($importInfo.type -eq 'dot') {                
-                $replacement.Value = '. $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
+                $replacement.Value = '. ([scriptblock]::Create($global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"].toString()))' 
             }
             elseif ($importInfo.type -eq 'ampersand') {                
-                $replacement.Value = '& $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
+                $replacement.Value = '& ([scriptblock]::Create($global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"].toString()))' 
             }
             elseif ($importInfo.type -eq 'using') {                
                 $replacement.Value = 'Import-Module (New-Module -Name ' + $moduleName + ' -ScriptBlock $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]) -DisableNameChecking' 
@@ -2016,10 +2016,10 @@ Class FuncNameGenerator {
 }
 
 
-$global:__MODULES_69f5635f4b2f44f5a23f5f013a3dde7f = @{}
+$global:__MODULES_25b1fb551b164140a2dcc8a366e858bc = @{}
 
 
-$global:__MODULES_69f5635f4b2f44f5a23f5f013a3dde7f["897d7f0cafb840b6a40991f83331aa26"] = {
+$global:__MODULES_25b1fb551b164140a2dcc8a366e858bc["6910055273d04428ab60dfc7be27b394"] = {
     function Invoke-PSBundler {
         [CmdletBinding()]
         param(
@@ -2029,5 +2029,5 @@ $global:__MODULES_69f5635f4b2f44f5a23f5f013a3dde7f["897d7f0cafb840b6a40991f83331
     }
 }
 
-Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_69f5635f4b2f44f5a23f5f013a3dde7f["897d7f0cafb840b6a40991f83331aa26"]) -Force -DisableNameChecking
+Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_25b1fb551b164140a2dcc8a366e858bc["6910055273d04428ab60dfc7be27b394"]) -Force -DisableNameChecking
 Invoke-PsBundler -configPath $configPath

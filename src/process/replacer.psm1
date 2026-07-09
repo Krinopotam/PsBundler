@@ -81,11 +81,11 @@ class Replacer {
 
             if ($importInfo.type -eq 'dot') {
                 #$replacement.Value = '. ($ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '"))["' + $importId + '"]' 
-                $replacement.Value = '. $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
+                $replacement.Value = '. ([scriptblock]::Create($global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"].toString()))' 
             }
             elseif ($importInfo.type -eq 'ampersand') {
                 #$replacement.Value = '& ($ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '"))["' + $importId + '"]' 
-                $replacement.Value = '& $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]' 
+                $replacement.Value = '& ([scriptblock]::Create($global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"].toString()))' 
             }
             elseif ($importInfo.type -eq 'using') {
                 #$replacement.Value = 'Import-Module (New-Module -ScriptBlock $ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '")["' + $importId + '"]) -Force -DisableNameChecking' 

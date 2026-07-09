@@ -1,6 +1,6 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.8
+#Version: 2.1.9
 #requires -Version 5.1
 ##########################################################################################
 
@@ -2016,10 +2016,10 @@ Class FuncNameGenerator {
 }
 
 
-$global:__MODULES_a97a097725c447418ef1cb18f2c2bca3 = @{}
+$global:__MODULES_c90f6dcc6e194789acd37cc30cd65e12 = @{}
 
 
-$global:__MODULES_a97a097725c447418ef1cb18f2c2bca3["6f42a522bd21441ebf13ebe8202af0b6"] = {
+$global:__MODULES_c90f6dcc6e194789acd37cc30cd65e12["45336e98ae4b491ea7bd030e22394e38"] = {
     function Invoke-PSBundler {
         [CmdletBinding()]
         param(
@@ -2029,5 +2029,5 @@ $global:__MODULES_a97a097725c447418ef1cb18f2c2bca3["6f42a522bd21441ebf13ebe8202a
     }
 }
 
-Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_a97a097725c447418ef1cb18f2c2bca3["6f42a522bd21441ebf13ebe8202af0b6"]) -Force -DisableNameChecking
+Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_c90f6dcc6e194789acd37cc30cd65e12["45336e98ae4b491ea7bd030e22394e38"]) -Force -DisableNameChecking
 Invoke-PsBundler -configPath $configPath

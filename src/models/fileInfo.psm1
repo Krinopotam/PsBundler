@@ -1,7 +1,7 @@
 using module ..\models\bundlerConfig.psm1
 using namespace System.Management.Automation.Language
 
-Class FileInfo {
+class FileInfo {
     # App config
     [BundlerConfig]$_config
 
@@ -25,7 +25,8 @@ Class FileInfo {
     FileInfo ([string]$filePath, [BundlerConfig]$config, [bool]$isEntry = $false, [hashtable]$consumerInfo = $null) {
         $this._config = $config
 
-        $this.id = [Guid]::NewGuid().ToString("N")
+        #$this.id = [Guid]::NewGuid().ToString("N")
+        $this.id = $this.GenerateFileKey($config.ProjectRoot, $filePath)
         $this.path = $filePath
         $this.isEntry = $isEntry
         
@@ -42,7 +43,7 @@ Class FileInfo {
             if (-not (Test-Path $filePath)) {
                 $consumerStr = ""
                 if ($consumerInfo) { $consumerStr = "imported by $($consumerInfo.file.path)" }
-                Throw "File not found: $filePath $consumerStr"
+                throw "File not found: $filePath $consumerStr"
             }
 
             $source = Get-Content $filePath -Raw 
@@ -139,5 +140,21 @@ Class FileInfo {
         if ($varsAndFunctions) { return $false }
 
         return $true
+    }
+
+    [string]GenerateFileKey([string]$ProjectRoot, [string]$FilePath) {
+        $rootFullPath = [System.IO.Path]::GetFullPath($ProjectRoot)
+        $fileFullPath = [System.IO.Path]::GetFullPath($FilePath)
+
+        $rootFullPath = $rootFullPath.TrimEnd('\', '/')
+
+        $comparison = [System.StringComparison]::OrdinalIgnoreCase
+        if (-not $fileFullPath.StartsWith($rootFullPath + [System.IO.Path]::DirectorySeparatorChar, $comparison)) {
+            throw "File is outside project root. ProjectRoot='$ProjectRoot', FilePath='$FilePath'"
+        }
+
+        $relativePath = $fileFullPath.Substring($rootFullPath.Length + 1)
+
+        return $relativePath.Replace('\', '/')
     }
 }

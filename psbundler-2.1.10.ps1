@@ -1,6 +1,6 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.9
+#Version: 2.1.10
 #requires -Version 5.1
 ##########################################################################################
 
@@ -107,8 +107,8 @@ class BundlerConfig {
             $this.configPath = [System.IO.Path]::Combine($scriptLaunchPath, 'psbundler.config.json')
         }
         
-        $this.Load()
-        $this.modulesSourceMapVarName = "__MODULES_" + [Guid]::NewGuid().ToString("N")
+        $this.Load()        
+        $this.modulesSourceMapVarName = "__PS_BUNDLER_MODULES"
     }
 
     [void]Load() {        
@@ -378,7 +378,7 @@ Class CyclesDetector {
     }
 }
 
-Class FileInfo {    
+class FileInfo {    
     [BundlerConfig]$_config
     
     [string]$id    
@@ -392,8 +392,8 @@ Class FileInfo {
 
     FileInfo ([string]$filePath, [BundlerConfig]$config, [bool]$isEntry = $false, [hashtable]$consumerInfo = $null) {
         $this._config = $config
-
-        $this.id = [Guid]::NewGuid().ToString("N")
+        
+        $this.id = $this.GenerateFileKey($config.ProjectRoot, $filePath)
         $this.path = $filePath
         $this.isEntry = $isEntry
         
@@ -410,7 +410,7 @@ Class FileInfo {
             if (-not (Test-Path $filePath)) {
                 $consumerStr = ""
                 if ($consumerInfo) { $consumerStr = "imported by $($consumerInfo.file.path)" }
-                Throw "File not found: $filePath $consumerStr"
+                throw "File not found: $filePath $consumerStr"
             }
 
             $source = Get-Content $filePath -Raw 
@@ -503,6 +503,22 @@ Class FileInfo {
         if ($varsAndFunctions) { return $false }
 
         return $true
+    }
+
+    [string]GenerateFileKey([string]$ProjectRoot, [string]$FilePath) {
+        $rootFullPath = [System.IO.Path]::GetFullPath($ProjectRoot)
+        $fileFullPath = [System.IO.Path]::GetFullPath($FilePath)
+
+        $rootFullPath = $rootFullPath.TrimEnd('\', '/')
+
+        $comparison = [System.StringComparison]::OrdinalIgnoreCase
+        if (-not $fileFullPath.StartsWith($rootFullPath + [System.IO.Path]::DirectorySeparatorChar, $comparison)) {
+            throw "File is outside project root. ProjectRoot='$ProjectRoot', FilePath='$FilePath'"
+        }
+
+        $relativePath = $fileFullPath.Substring($rootFullPath.Length + 1)
+
+        return $relativePath.Replace('\', '/')
     }
 }
 
@@ -996,27 +1012,25 @@ class BundleBuilder {
         $classesStr = $classes.Values -join ([Environment]::NewLine + [Environment]::NewLine)
 
         if (-not $this._config.deferClassesCompilation) { return $classesStr }
-
-        $uuid = [Guid]::NewGuid().ToString("N")
-                
+               
         if (-not $this._config.embedClassesAsBase64) {
-            return "`$__CLASSES_SOURCE_$uuid = @'" + [Environment]::NewLine `
+            return "`$__PS_BUNDLER_CLASSES_SOURCE = @'" + [Environment]::NewLine `
                 + $classesStr + [Environment]::NewLine `
                 + "'@" + [Environment]::NewLine `
-                + "Invoke-Expression `$__CLASSES_SOURCE_$uuid" + [Environment]::NewLine `
-                + "`$__CLASSES_SOURCE_$uuid = `$null"
+                + "Invoke-Expression `$__PS_BUNDLER_CLASSES_SOURCE" + [Environment]::NewLine `
+                + "`$__PS_BUNDLER_CLASSES_SOURCE = `$null"
         }
 
         $bytes = [Text.Encoding]::UTF8.GetBytes($classesStr)
         $classesStr = [Convert]::ToBase64String($bytes)
         
-        return "`$__CLASSES_B64_$uuid = '$classesStr'" + [Environment]::NewLine `
-            + "`$__CLASSES_BYTES_$uuid = [System.Convert]::FromBase64String(`$__CLASSES_B64_$uuid)" + [Environment]::NewLine `
-            + "`$__CLASSES_SOURCE_$uuid = [System.Text.Encoding]::UTF8.GetString(`$__CLASSES_BYTES_$uuid)" + [Environment]::NewLine `
-            + "Invoke-Expression `$__CLASSES_SOURCE_$uuid" + [Environment]::NewLine `
-            + "`$__CLASSES_BYTES_$uuid = `$null" + [Environment]::NewLine `
-            + "`$__CLASSES_SOURCE_$uuid = `$null" + [Environment]::NewLine `
-            + "`$__CLASSES_B64_$uuid = `$null"
+        return "`$__PS_BUNDLER_CLASSES_B64 = '$classesStr'" + [Environment]::NewLine `
+            + "`$__PS_BUNDLER_CLASSES_BYTES = [System.Convert]::FromBase64String(`$__PS_BUNDLER_CLASSES_B64)" + [Environment]::NewLine `
+            + "`$__PS_BUNDLER_CLASSES_SOURCE = [System.Text.Encoding]::UTF8.GetString(`$__PS_BUNDLER_CLASSES_BYTES)" + [Environment]::NewLine `
+            + "Invoke-Expression `$__PS_BUNDLER_CLASSES_SOURCE" + [Environment]::NewLine `
+            + "`$__PS_BUNDLER_CLASSES_BYTES = `$null" + [Environment]::NewLine `
+            + "`$__PS_BUNDLER_CLASSES_SOURCE = `$null" + [Environment]::NewLine `
+            + "`$__PS_BUNDLER_CLASSES_B64 = `$null"
     }
 
     [FileInfo]getEntryFile ([hashtable]$importsMap) {
@@ -2016,10 +2030,10 @@ Class FuncNameGenerator {
 }
 
 
-$global:__MODULES_c90f6dcc6e194789acd37cc30cd65e12 = @{}
+$global:__PS_BUNDLER_MODULES = @{}
 
 
-$global:__MODULES_c90f6dcc6e194789acd37cc30cd65e12["45336e98ae4b491ea7bd030e22394e38"] = {
+$global:__PS_BUNDLER_MODULES["src/PsBundler.psm1"] = {
     function Invoke-PSBundler {
         [CmdletBinding()]
         param(
@@ -2029,5 +2043,5 @@ $global:__MODULES_c90f6dcc6e194789acd37cc30cd65e12["45336e98ae4b491ea7bd030e2239
     }
 }
 
-Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__MODULES_c90f6dcc6e194789acd37cc30cd65e12["45336e98ae4b491ea7bd030e22394e38"]) -Force -DisableNameChecking
+Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__PS_BUNDLER_MODULES["src/PsBundler.psm1"]) -Force -DisableNameChecking
 Invoke-PsBundler -configPath $configPath

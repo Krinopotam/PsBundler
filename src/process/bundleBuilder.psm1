@@ -67,27 +67,25 @@ class BundleBuilder {
         $classesStr = $classes.Values -join ([Environment]::NewLine + [Environment]::NewLine)
 
         if (-not $this._config.deferClassesCompilation) { return $classesStr }
-
-        $uuid = [Guid]::NewGuid().ToString("N")
-                
+               
         if (-not $this._config.embedClassesAsBase64) {
-            return "`$__CLASSES_SOURCE_$uuid = @'" + [Environment]::NewLine `
+            return "`$__PS_BUNDLER_CLASSES_SOURCE = @'" + [Environment]::NewLine `
                 + $classesStr + [Environment]::NewLine `
                 + "'@" + [Environment]::NewLine `
-                + "Invoke-Expression `$__CLASSES_SOURCE_$uuid" + [Environment]::NewLine `
-                + "`$__CLASSES_SOURCE_$uuid = `$null"
+                + "Invoke-Expression `$__PS_BUNDLER_CLASSES_SOURCE" + [Environment]::NewLine `
+                + "`$__PS_BUNDLER_CLASSES_SOURCE = `$null"
         }
 
         $bytes = [Text.Encoding]::UTF8.GetBytes($classesStr)
         $classesStr = [Convert]::ToBase64String($bytes)
         
-        return "`$__CLASSES_B64_$uuid = '$classesStr'" + [Environment]::NewLine `
-            + "`$__CLASSES_BYTES_$uuid = [System.Convert]::FromBase64String(`$__CLASSES_B64_$uuid)" + [Environment]::NewLine `
-            + "`$__CLASSES_SOURCE_$uuid = [System.Text.Encoding]::UTF8.GetString(`$__CLASSES_BYTES_$uuid)" + [Environment]::NewLine `
-            + "Invoke-Expression `$__CLASSES_SOURCE_$uuid" + [Environment]::NewLine `
-            + "`$__CLASSES_BYTES_$uuid = `$null" + [Environment]::NewLine `
-            + "`$__CLASSES_SOURCE_$uuid = `$null" + [Environment]::NewLine `
-            + "`$__CLASSES_B64_$uuid = `$null"
+        return "`$__PS_BUNDLER_CLASSES_B64 = '$classesStr'" + [Environment]::NewLine `
+            + "`$__PS_BUNDLER_CLASSES_BYTES = [System.Convert]::FromBase64String(`$__PS_BUNDLER_CLASSES_B64)" + [Environment]::NewLine `
+            + "`$__PS_BUNDLER_CLASSES_SOURCE = [System.Text.Encoding]::UTF8.GetString(`$__PS_BUNDLER_CLASSES_BYTES)" + [Environment]::NewLine `
+            + "Invoke-Expression `$__PS_BUNDLER_CLASSES_SOURCE" + [Environment]::NewLine `
+            + "`$__PS_BUNDLER_CLASSES_BYTES = `$null" + [Environment]::NewLine `
+            + "`$__PS_BUNDLER_CLASSES_SOURCE = `$null" + [Environment]::NewLine `
+            + "`$__PS_BUNDLER_CLASSES_B64 = `$null"
     }
 
     [FileInfo]getEntryFile ([hashtable]$importsMap) {

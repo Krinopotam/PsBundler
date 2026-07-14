@@ -41,7 +41,8 @@ class BundlerConfig {
         }
         
         $this.Load()
-        $this.modulesSourceMapVarName = "__MODULES_" + [Guid]::NewGuid().ToString("N")
+        #$this.modulesSourceMapVarName = "__MODULES_" + [Guid]::NewGuid().ToString("N")
+        $this.modulesSourceMapVarName = "__PS_BUNDLER_MODULES"
     }
 
     [void]Load() {

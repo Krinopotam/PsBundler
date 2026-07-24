@@ -41,6 +41,12 @@ class BundleBuilder {
 
         if ($replacementsInfo.paramBlock) { $result += ($replacementsInfo.paramBlock + [Environment]::NewLine * 2) }
 
+        # Safe Add-Type commands must execute immediately before deferred class
+        # source is passed to Invoke-Expression. In the regular class mode this
+        # collection is empty and Add-Type remains at its original location.
+        $addTypes = $this.getAddTypesString($replacementsInfo.addTypes)
+        if ($addTypes) { $result += ($addTypes + [Environment]::NewLine * 2) }
+
         $classes = $this.getClassesString($replacementsInfo.classes)
         if ($classes) { $result += ($classes + [Environment]::NewLine * 2) }
 
@@ -53,6 +59,10 @@ class BundleBuilder {
 
     [string]getNamespacesString ([System.Collections.Specialized.OrderedDictionary]$namespaces) {
         return $namespaces.Values -join [Environment]::NewLine
+    }
+
+    [string]getAddTypesString ([System.Collections.ArrayList]$addTypes) {
+        return $addTypes -join [Environment]::NewLine
     }
 
     [string]getClassesString ([System.Collections.Specialized.OrderedDictionary]$classes) {
@@ -165,7 +175,13 @@ class BundleBuilder {
                 
         if ($file.typesOnly) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
         $source = $this.PrepareSource($file, $replacementsInfo.replacementsMap[$file.id])
-        if (-not $source) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
+
+        # An imported file may become empty after all of its static Add-Type
+        # commands are hoisted before deferred class compilation. Imports pointing
+        # to that file are still present, so its registry key must exist. Register
+        # an empty script block for non-entry files instead of leaving a dangling
+        # $global:__PS_BUNDLER_MODULES["..."] reference.
+        if (-not $source -and $file.isEntry) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
         
         if (-not $file.isEntry) {
             $source = '$global:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source)

@@ -6,6 +6,6 @@
 	},
 	"stripComments": true,
 	"keepHeaderComments": true,
-	"deferClassesCompilation": false,
+	"deferClassesCompilation": true,
 	"embedClassesAsBase64": false
 }

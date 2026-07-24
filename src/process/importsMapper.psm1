@@ -18,7 +18,30 @@ Class ImportsMapper {
         $cyclesDetector = [CyclesDetector]::new()
         $hasCycles = $cyclesDetector.Check($importMap)
         if ($hasCycles) { return  $null }
+
+        # A file containing only classes can normally disappear after its classes
+        # are extracted. It must remain executable, however, when it imports a
+        # dependency with runtime code (for example, a guarded Add-Type). Propagate
+        # that fact through the acyclic import graph before replacements are built.
+        $entryFile = $this.GetEntryFile($importMap)
+        $this.UpdateTypesOnly($entryFile, @{})
+
         return $importMap
+    }
+
+    [void]UpdateTypesOnly([FileInfo]$file, [hashtable]$processed) {
+        if (-not $file -or $processed.ContainsKey($file.path)) { return }
+        $processed[$file.path] = $true
+
+        foreach ($importInfo in $file.imports.Values) {
+            $importFile = $importInfo.file
+            $this.UpdateTypesOnly($importFile, $processed)
+
+            # "typesOnly" is used to remove both a file body and imports pointing
+            # to it. A runtime dependency makes the importing file runtime-relevant
+            # as well, even if its own body contains only PowerShell classes.
+            if (-not $importFile.typesOnly) { $file.typesOnly = $false }
+        }
     }
 
     [System.Collections.Specialized.OrderedDictionary]GenerateMap (       

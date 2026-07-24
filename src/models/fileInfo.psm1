@@ -1,4 +1,5 @@
 using module ..\models\bundlerConfig.psm1
+using module ..\helpers\astHelpers.psm1
 using namespace System.Management.Automation.Language
 
 class FileInfo {
@@ -21,9 +22,11 @@ class FileInfo {
     [System.Collections.ObjectModel.ReadOnlyCollection[System.Management.Automation.Language.Token]]$tokens = $null
     # Is file contains only types (classes, interfaces, structs, enums)
     [bool]$typesOnly
+    [AstHelpers]$_astHelper
 
     FileInfo ([string]$filePath, [BundlerConfig]$config, [bool]$isEntry = $false, [hashtable]$consumerInfo = $null) {
         $this._config = $config
+        $this._astHelper = [AstHelpers]::new()
 
         #$this.id = [Guid]::NewGuid().ToString("N")
         $this.id = $this.GenerateFileKey($config.ProjectRoot, $filePath)
@@ -135,9 +138,21 @@ class FileInfo {
                     $p = $p.Parent
                 }
 
-                return $node -is [AssignmentStatementAst] `
-                    -or $node -is [FunctionDefinitionAst] `
-                    -or $node -is [CommandAst]
+                if ($node -is [AssignmentStatementAst] -or $node -is [FunctionDefinitionAst]) { return $true }
+
+                if ($node -is [CommandAst]) {
+                    # A safe Add-Type is moved before deferred classes and leaves
+                    # no runtime code at this location. Every other command,
+                    # including conditional or dynamic Add-Type, keeps the file
+                    # from being classified as types-only.
+                    return -not $this._astHelper.IsHoistableAddType(
+                        $node,
+                        $this.Ast,
+                        $this._config.deferClassesCompilation
+                    )
+                }
+
+                return $false
             }, $false)
         if ($codeNodes) { return $false }
 

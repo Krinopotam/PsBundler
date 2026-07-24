@@ -17,6 +17,7 @@ class Replacer {
         $replacementsMap = @{}
         $namespaces = [System.Collections.Specialized.OrderedDictionary]::new()
         $assemblies = [System.Collections.Specialized.OrderedDictionary]::new()
+        $addTypes = [System.Collections.ArrayList]::new()
         $classes = [System.Collections.Specialized.OrderedDictionary]::new()
         $headerComments = ""
         $paramBlock = ""
@@ -39,6 +40,11 @@ class Replacer {
             # Namespaces replacements
             $this.fillNamespacesReplacements($file, $namespaces, $replacements)
 
+            # Only static, standalone, file-level Add-Type commands are moved, and
+            # only when deferred classes must see their CLR types before
+            # Invoke-Expression compiles the collected PowerShell classes.
+            $this.fillAddTypesReplacements($file, $addTypes, $replacements)
+
             # Classes replacements
             $this.fillClassesReplacements($file, $classes, $replacements)
         }
@@ -48,6 +54,7 @@ class Replacer {
             assemblies      = $assemblies
             namespaces      = $namespaces
             paramBlock      = $paramBlock
+            addTypes        = $addTypes
             classes         = $classes
             replacementsMap = $replacementsMap
         }
@@ -121,6 +128,27 @@ class Replacer {
         foreach ($usingStatement in $usingStatements) {
             $namespaces[$usingStatement.Name.Value] = "using namespace $($usingStatement.Name.Value)"
             $replacements.Add(@{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" })
+        }
+    }
+
+    # Move safe Add-Type pipelines before deferred class compilation.
+    [void]fillAddTypesReplacements([FileInfo]$file, [System.Collections.ArrayList]$addTypes, [System.Collections.ArrayList]$replacements) {
+        $commands = $file.Ast.FindAll( { $args[0] -is [CommandAst] -and $args[0].GetCommandName() -eq "Add-Type" }, $false)
+
+        foreach ($command in $commands) {
+            if (-not $this._astHelper.IsHoistableAddType($command, $file.Ast, $this._config.deferClassesCompilation)) { continue }
+
+            $pipeline = $command.Parent
+
+            # Use a list rather than a dictionary: identical commands in different
+            # source locations represent distinct executions and must retain their
+            # original multiplicity and ordering.
+            $null = $addTypes.Add($pipeline.Extent.Text)
+            $replacements.Add(@{
+                    start  = $pipeline.Extent.StartOffset
+                    Length = $pipeline.Extent.EndOffset - $pipeline.Extent.StartOffset
+                    value  = ""
+                })
         }
     }
 

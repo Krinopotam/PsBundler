@@ -257,7 +257,23 @@ Class ImportsMapper {
         $cyclesDetector = [CyclesDetector]::new()
         $hasCycles = $cyclesDetector.Check($importMap)
         if ($hasCycles) { return  $null }
+                                
+        $entryFile = $this.GetEntryFile($importMap)
+        $this.UpdateTypesOnly($entryFile, @{})
+
         return $importMap
+    }
+
+    [void]UpdateTypesOnly([FileInfo]$file, [hashtable]$processed) {
+        if (-not $file -or $processed.ContainsKey($file.path)) { return }
+        $processed[$file.path] = $true
+
+        foreach ($importInfo in $file.imports.Values) {
+            $importFile = $importInfo.file
+            $this.UpdateTypesOnly($importFile, $processed)
+                                    
+            if (-not $importFile.typesOnly) { $file.typesOnly = $false }
+        }
     }
 
     [System.Collections.Specialized.OrderedDictionary]GenerateMap (       
@@ -389,9 +405,11 @@ class FileInfo {
     [Ast]$ast = $null    
     [System.Collections.ObjectModel.ReadOnlyCollection[System.Management.Automation.Language.Token]]$tokens = $null    
     [bool]$typesOnly
+    [AstHelpers]$_astHelper
 
     FileInfo ([string]$filePath, [BundlerConfig]$config, [bool]$isEntry = $false, [hashtable]$consumerInfo = $null) {
         $this._config = $config
+        $this._astHelper = [AstHelpers]::new()
         
         $this.id = $this.GenerateFileKey($config.ProjectRoot, $filePath)
         $this.path = $filePath
@@ -498,9 +516,17 @@ class FileInfo {
                     $p = $p.Parent
                 }
 
-                return $node -is [AssignmentStatementAst] `
-                    -or $node -is [FunctionDefinitionAst] `
-                    -or $node -is [CommandAst]
+                if ($node -is [AssignmentStatementAst] -or $node -is [FunctionDefinitionAst]) { return $true }
+
+                if ($node -is [CommandAst]) {                                                                                
+                    return -not $this._astHelper.IsHoistableAddType(
+                        $node,
+                        $this.Ast,
+                        $this._config.deferClassesCompilation
+                    )
+                }
+
+                return $false
             }, $false)
         if ($codeNodes) { return $false }
 
@@ -521,6 +547,108 @@ class FileInfo {
         $relativePath = $fileFullPath.Substring($rootFullPath.Length + 1)
 
         return $relativePath.Replace('\', '/')
+    }
+}
+
+Class AstHelpers {                                        
+    [bool]IsHoistableAddType([CommandAst]$commandAst, [ScriptBlockAst]$rootAst, [bool]$deferClassesCompilation) {
+        if (-not $deferClassesCompilation -or -not $commandAst -or -not $rootAst) { return $false }
+        if ($commandAst.GetCommandName() -ne "Add-Type") { return $false }
+        if ($commandAst.InvocationOperator -ne [TokenKind]::Unknown) { return $false }
+
+        $pipeline = $commandAst.Parent
+                        
+        if ($pipeline -isnot [PipelineAst] -or $pipeline.PipelineElements.Count -ne 1) { return $false }
+                                
+        if ($pipeline.Parent -isnot [NamedBlockAst] `
+                -or -not [object]::ReferenceEquals($pipeline.Parent.Parent, $rootAst)) { return $false }
+
+        if ($commandAst.Redirections.Count -gt 0) { return $false }
+
+        for ($i = 1; $i -lt $commandAst.CommandElements.Count; $i++) {
+            $element = $commandAst.CommandElements[$i]
+
+            if ($element -is [CommandParameterAst]) {                                
+                if ("PassThru".StartsWith($element.ParameterName, [StringComparison]::OrdinalIgnoreCase)) { return $false }
+                if ($element.Argument -and -not $this.IsStaticExpression($element.Argument)) { return $false }
+                continue
+            }
+
+            if (-not $this.IsStaticExpression($element)) { return $false }
+        }
+
+        return $true
+    }
+            
+    [bool]IsStaticExpression([Ast]$ast) {
+        if ($ast -is [StringConstantExpressionAst] -or $ast -is [ConstantExpressionAst]) { return $true }
+
+        if ($ast -is [ExpandableStringExpressionAst]) {
+            return -not $ast.NestedExpressions -or $ast.NestedExpressions.Count -eq 0
+        }
+
+        if ($ast -is [ArrayLiteralAst]) {
+            foreach ($element in $ast.Elements) {
+                if (-not $this.IsStaticExpression($element)) { return $false }
+            }
+            return $true
+        }
+
+        return $false
+    }
+    
+    [hashtable[]]GetCommandAstParamsAst([CommandAst]$commandAst) {
+        $result = @()
+        $elements = $commandAst.CommandElements
+        
+        if ($elements.Count -lt 2) { return $result } 
+        
+        for ($i = 1; $i -lt $elements.Count; $i++) {
+            $el = $elements[$i]
+
+            if ($el -isnot [CommandParameterAst]) {
+                $result += @{
+                    name  = ""
+                    value = $el
+                }
+                continue
+            }
+
+            $parName = $el.ParameterName
+            $parValue = $null
+            if ($i + 1 -lt $elements.Count -and $elements[$i + 1] -isnot [CommandParameterAst]) {
+                $parValue = $elements[$i + 1]
+                $i++
+            }
+
+            $result += @{
+                name  = $parName
+                value = $parValue
+            }
+        }
+        return $result
+    }
+    
+    [System.Collections.Specialized.OrderedDictionary]GetNamedParametersMap([CommandAst]$commandAst) {
+        $paramsList = $this.GetCommandAstParamsAst($commandAst)
+        $result = [System.Collections.Specialized.OrderedDictionary]::new()
+        foreach ($par in $paramsList) {
+            if ($par.name) {
+                $result[$par.name] = $par.value
+            }
+        }
+
+        return $result
+    }
+    
+    [string]ConvertParamsAstMapToString([System.Collections.Specialized.OrderedDictionary]$paramsMap) {
+        $paramsStr = ""
+        foreach ($key in $paramsMap.Keys) {
+            $value = $paramsMap[$key]
+            if ($value) { $paramsStr += " -$key " + $value.Extent.Text }
+            else { $paramsStr += " -$key" }
+        }
+        return $paramsStr
     }
 }
 
@@ -729,62 +857,6 @@ class ImportParser {
     }
 }
 
-Class AstHelpers {    
-    [hashtable[]]GetCommandAstParamsAst([CommandAst]$commandAst) {
-        $result = @()
-        $elements = $commandAst.CommandElements
-        
-        if ($elements.Count -lt 2) { return $result } 
-        
-        for ($i = 1; $i -lt $elements.Count; $i++) {
-            $el = $elements[$i]
-
-            if ($el -isnot [CommandParameterAst]) {
-                $result += @{
-                    name  = ""
-                    value = $el
-                }
-                continue
-            }
-
-            $parName = $el.ParameterName
-            $parValue = $null
-            if ($i + 1 -lt $elements.Count -and $elements[$i + 1] -isnot [CommandParameterAst]) {
-                $parValue = $elements[$i + 1]
-                $i++
-            }
-
-            $result += @{
-                name  = $parName
-                value = $parValue
-            }
-        }
-        return $result
-    }
-    
-    [System.Collections.Specialized.OrderedDictionary]GetNamedParametersMap([CommandAst]$commandAst) {
-        $paramsList = $this.GetCommandAstParamsAst($commandAst)
-        $result = [System.Collections.Specialized.OrderedDictionary]::new()
-        foreach ($par in $paramsList) {
-            if ($par.name) {
-                $result[$par.name] = $par.value
-            }
-        }
-
-        return $result
-    }
-    
-    [string]ConvertParamsAstMapToString([System.Collections.Specialized.OrderedDictionary]$paramsMap) {
-        $paramsStr = ""
-        foreach ($key in $paramsMap.Keys) {
-            $value = $paramsMap[$key]
-            if ($value) { $paramsStr += " -$key " + $value.Extent.Text }
-            else { $paramsStr += " -$key" }
-        }
-        return $paramsStr
-    }
-}
-
 class Replacer {
     [BundlerConfig]$_config
     [AstHelpers]$_astHelper
@@ -798,6 +870,7 @@ class Replacer {
         $replacementsMap = @{}
         $namespaces = [System.Collections.Specialized.OrderedDictionary]::new()
         $assemblies = [System.Collections.Specialized.OrderedDictionary]::new()
+        $addTypes = [System.Collections.ArrayList]::new()
         $classes = [System.Collections.Specialized.OrderedDictionary]::new()
         $headerComments = ""
         $paramBlock = ""
@@ -816,6 +889,8 @@ class Replacer {
             $this.fillAssembliesReplacements($file, $assemblies, $replacements)
             
             $this.fillNamespacesReplacements($file, $namespaces, $replacements)
+                                    
+            $this.fillAddTypesReplacements($file, $addTypes, $replacements)
             
             $this.fillClassesReplacements($file, $classes, $replacements)
         }
@@ -825,6 +900,7 @@ class Replacer {
             assemblies      = $assemblies
             namespaces      = $namespaces
             paramBlock      = $paramBlock
+            addTypes        = $addTypes
             classes         = $classes
             replacementsMap = $replacementsMap
         }
@@ -888,6 +964,23 @@ class Replacer {
         foreach ($usingStatement in $usingStatements) {
             $namespaces[$usingStatement.Name.Value] = "using namespace $($usingStatement.Name.Value)"
             $replacements.Add(@{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" })
+        }
+    }
+    
+    [void]fillAddTypesReplacements([FileInfo]$file, [System.Collections.ArrayList]$addTypes, [System.Collections.ArrayList]$replacements) {
+        $commands = $file.Ast.FindAll( { $args[0] -is [CommandAst] -and $args[0].GetCommandName() -eq "Add-Type" }, $false)
+
+        foreach ($command in $commands) {
+            if (-not $this._astHelper.IsHoistableAddType($command, $file.Ast, $this._config.deferClassesCompilation)) { continue }
+
+            $pipeline = $command.Parent
+                                    
+            $null = $addTypes.Add($pipeline.Extent.Text)
+            $replacements.Add(@{
+                    start  = $pipeline.Extent.StartOffset
+                    Length = $pipeline.Extent.EndOffset - $pipeline.Extent.StartOffset
+                    value  = ""
+                })
         }
     }
     
@@ -974,6 +1067,9 @@ class BundleBuilder {
         if ($namespaces) { $result += ($namespaces + [Environment]::NewLine * 2) }
 
         if ($replacementsInfo.paramBlock) { $result += ($replacementsInfo.paramBlock + [Environment]::NewLine * 2) }
+                        
+        $addTypes = $this.getAddTypesString($replacementsInfo.addTypes)
+        if ($addTypes) { $result += ($addTypes + [Environment]::NewLine * 2) }
 
         $classes = $this.getClassesString($replacementsInfo.classes)
         if ($classes) { $result += ($classes + [Environment]::NewLine * 2) }
@@ -987,6 +1083,10 @@ class BundleBuilder {
 
     [string]getNamespacesString ([System.Collections.Specialized.OrderedDictionary]$namespaces) {
         return $namespaces.Values -join [Environment]::NewLine
+    }
+
+    [string]getAddTypesString ([System.Collections.ArrayList]$addTypes) {
+        return $addTypes -join [Environment]::NewLine
     }
 
     [string]getClassesString ([System.Collections.Specialized.OrderedDictionary]$classes) {
@@ -1094,7 +1194,8 @@ class BundleBuilder {
                 
         if ($file.typesOnly) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
         $source = $this.PrepareSource($file, $replacementsInfo.replacementsMap[$file.id])
-        if (-not $source) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
+                                        
+        if (-not $source -and $file.isEntry) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
         
         if (-not $file.isEntry) {
             $source = '$global:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source)

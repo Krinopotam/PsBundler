@@ -124,7 +124,7 @@ class FileInfo {
         $types = $this.Ast.FindAll( { $args[0] -is [TypeDefinitionAst] }, $false)
         if (-not $types) { return $false }
 
-        $varsAndFunctions = $this.Ast.FindAll( {
+        $codeNodes = $this.Ast.FindAll( {
                 param($node)
 
                 #WORKAROUND: FindAll with nested parameter $false ignores nested scriptblocks only, and finds all nodes within class
@@ -135,9 +135,11 @@ class FileInfo {
                     $p = $p.Parent
                 }
 
-                return $node -is [AssignmentStatementAst] -or $node -is [FunctionDefinitionAst]
+                return $node -is [AssignmentStatementAst] `
+                    -or $node -is [FunctionDefinitionAst] `
+                    -or $node -is [CommandAst]
             }, $false)
-        if ($varsAndFunctions) { return $false }
+        if ($codeNodes) { return $false }
 
         return $true
     }

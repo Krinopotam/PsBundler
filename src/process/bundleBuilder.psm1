@@ -41,9 +41,6 @@ class BundleBuilder {
 
         if ($replacementsInfo.paramBlock) { $result += ($replacementsInfo.paramBlock + [Environment]::NewLine * 2) }
 
-        $addTypes = $this.getAddTypesString($replacementsInfo.addTypes)
-        if ($addTypes -and $result) { $result += ( $addTypes + [Environment]::NewLine * 2) }
-
         $classes = $this.getClassesString($replacementsInfo.classes)
         if ($classes) { $result += ($classes + [Environment]::NewLine * 2) }
 
@@ -56,10 +53,6 @@ class BundleBuilder {
 
     [string]getNamespacesString ([System.Collections.Specialized.OrderedDictionary]$namespaces) {
         return $namespaces.Values -join [Environment]::NewLine
-    }
-
-    [string]getAddTypesString ([System.Collections.Specialized.OrderedDictionary]$addTypes) {
-        return $addTypes.Values -join [Environment]::NewLine
     }
 
     [string]getClassesString ([System.Collections.Specialized.OrderedDictionary]$classes) {
@@ -175,7 +168,7 @@ class BundleBuilder {
         if (-not $source) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
         
         if (-not $file.isEntry) {
-            $source = '$global:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source, "    ")
+            $source = '$global:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source)
         }
 
         $contentList.Add($source)
@@ -183,9 +176,9 @@ class BundleBuilder {
         return
     }
 
-    # Wraps string in { ... } and make indents
-    [string]bracketWrap([string]$str, [string]$indent = "    ") {
-        return "{" + [Environment]::NewLine + (($str -split "\r?\n" | ForEach-Object { "$indent$_" }) -join [Environment]::NewLine) + [Environment]::NewLine + "}"
+    # Wraps source without reindenting it, preserving here-string contents and terminators
+    [string]bracketWrap([string]$str) {
+        return "{" + [Environment]::NewLine + $str + [Environment]::NewLine + "}"
     }
 
     [void]addContentToFile([string]$path, [string]$content) {

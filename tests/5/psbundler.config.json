@@ -1,0 +1,11 @@
+{
+	"projectRoot": "..\\..\\",
+	"outDir": "tests\\5\\build",
+	"entryPoints": {
+		"tests\\5\\main.ps1": "psbundler-test5.ps1"
+	},
+	"stripComments": true,
+	"keepHeaderComments": true,
+	"deferClassesCompilation": false,
+	"embedClassesAsBase64": false
+}

@@ -1,6 +1,6 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.10
+#Version: 2.1.11
 #requires -Version 5.1
 ##########################################################################################
 
@@ -489,7 +489,7 @@ class FileInfo {
         $types = $this.Ast.FindAll( { $args[0] -is [TypeDefinitionAst] }, $false)
         if (-not $types) { return $false }
 
-        $varsAndFunctions = $this.Ast.FindAll( {
+        $codeNodes = $this.Ast.FindAll( {
                 param($node)
                                 
                 $p = $node.Parent
@@ -498,9 +498,11 @@ class FileInfo {
                     $p = $p.Parent
                 }
 
-                return $node -is [AssignmentStatementAst] -or $node -is [FunctionDefinitionAst]
+                return $node -is [AssignmentStatementAst] `
+                    -or $node -is [FunctionDefinitionAst] `
+                    -or $node -is [CommandAst]
             }, $false)
-        if ($varsAndFunctions) { return $false }
+        if ($codeNodes) { return $false }
 
         return $true
     }
@@ -796,7 +798,6 @@ class Replacer {
         $replacementsMap = @{}
         $namespaces = [System.Collections.Specialized.OrderedDictionary]::new()
         $assemblies = [System.Collections.Specialized.OrderedDictionary]::new()
-        $addTypes = [System.Collections.Specialized.OrderedDictionary]::new()
         $classes = [System.Collections.Specialized.OrderedDictionary]::new()
         $headerComments = ""
         $paramBlock = ""
@@ -816,8 +817,6 @@ class Replacer {
             
             $this.fillNamespacesReplacements($file, $namespaces, $replacements)
             
-            $this.fillAddTypesReplacements($file, $addTypes, $replacements)
-            
             $this.fillClassesReplacements($file, $classes, $replacements)
         }
 
@@ -826,7 +825,6 @@ class Replacer {
             assemblies      = $assemblies
             namespaces      = $namespaces
             paramBlock      = $paramBlock
-            addTypes        = $addTypes
             classes         = $classes
             replacementsMap = $replacementsMap
         }
@@ -889,15 +887,6 @@ class Replacer {
         $usingStatements = $file.Ast.FindAll( { $args[0] -is [UsingStatementAst] -and $args[0].UsingStatementKind -eq "Namespace" }, $false)
         foreach ($usingStatement in $usingStatements) {
             $namespaces[$usingStatement.Name.Value] = "using namespace $($usingStatement.Name.Value)"
-            $replacements.Add(@{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" })
-        }
-    }
-    
-    [void]fillAddTypesReplacements([FileInfo]$file, [System.Collections.Specialized.OrderedDictionary]$addTypes, [System.Collections.ArrayList]$replacements) {
-        $usingStatements = $file.Ast.FindAll( { $args[0] -is [CommandAst] -and $args[0].GetCommandName() -eq "Add-Type" }, $false)
-        foreach ($usingStatement in $usingStatements) {
-            $text = $usingStatement.Extent.Text
-            $addTypes[$text] = $text
             $replacements.Add(@{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" })
         }
     }
@@ -986,9 +975,6 @@ class BundleBuilder {
 
         if ($replacementsInfo.paramBlock) { $result += ($replacementsInfo.paramBlock + [Environment]::NewLine * 2) }
 
-        $addTypes = $this.getAddTypesString($replacementsInfo.addTypes)
-        if ($addTypes -and $result) { $result += ( $addTypes + [Environment]::NewLine * 2) }
-
         $classes = $this.getClassesString($replacementsInfo.classes)
         if ($classes) { $result += ($classes + [Environment]::NewLine * 2) }
 
@@ -1001,10 +987,6 @@ class BundleBuilder {
 
     [string]getNamespacesString ([System.Collections.Specialized.OrderedDictionary]$namespaces) {
         return $namespaces.Values -join [Environment]::NewLine
-    }
-
-    [string]getAddTypesString ([System.Collections.Specialized.OrderedDictionary]$addTypes) {
-        return $addTypes.Values -join [Environment]::NewLine
     }
 
     [string]getClassesString ([System.Collections.Specialized.OrderedDictionary]$classes) {
@@ -1115,7 +1097,7 @@ class BundleBuilder {
         if (-not $source) { Write-Host "        File '$($file.path)' processed." -ForegroundColor Green; return }
         
         if (-not $file.isEntry) {
-            $source = '$global:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source, "    ")
+            $source = '$global:' + $this._config.modulesSourceMapVarName + '["' + $file.id + '"] = ' + $this.bracketWrap($source)
         }
 
         $contentList.Add($source)
@@ -1123,8 +1105,8 @@ class BundleBuilder {
         return
     }
     
-    [string]bracketWrap([string]$str, [string]$indent = "    ") {
-        return "{" + [Environment]::NewLine + (($str -split "\r?\n" | ForEach-Object { "$indent$_" }) -join [Environment]::NewLine) + [Environment]::NewLine + "}"
+    [string]bracketWrap([string]$str) {
+        return "{" + [Environment]::NewLine + $str + [Environment]::NewLine + "}"
     }
 
     [void]addContentToFile([string]$path, [string]$content) {
@@ -2034,13 +2016,13 @@ $global:__PS_BUNDLER_MODULES = @{}
 
 
 $global:__PS_BUNDLER_MODULES["src/PsBundler.psm1"] = {
-    function Invoke-PSBundler {
-        [CmdletBinding()]
-        param(
-            [string]$configPath = ""
-        )
-        $null = [PsBundler]::new($configPath) 
-    }
+function Invoke-PSBundler {
+    [CmdletBinding()]
+    param(
+        [string]$configPath = ""
+    )
+    $null = [PsBundler]::new($configPath)
+}
 }
 
 Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__PS_BUNDLER_MODULES["src/PsBundler.psm1"]) -Force -DisableNameChecking

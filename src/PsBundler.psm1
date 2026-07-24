@@ -46,5 +46,5 @@ function Invoke-PSBundler {
     param(
         [string]$configPath = ""
     )
-    $null = [PsBundler]::new($configPath) 
+    $null = [PsBundler]::new($configPath)
 }

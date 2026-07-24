@@ -17,7 +17,6 @@ class Replacer {
         $replacementsMap = @{}
         $namespaces = [System.Collections.Specialized.OrderedDictionary]::new()
         $assemblies = [System.Collections.Specialized.OrderedDictionary]::new()
-        $addTypes = [System.Collections.Specialized.OrderedDictionary]::new()
         $classes = [System.Collections.Specialized.OrderedDictionary]::new()
         $headerComments = ""
         $paramBlock = ""
@@ -40,9 +39,6 @@ class Replacer {
             # Namespaces replacements
             $this.fillNamespacesReplacements($file, $namespaces, $replacements)
 
-            # Add-Types replacements
-            $this.fillAddTypesReplacements($file, $addTypes, $replacements)
-
             # Classes replacements
             $this.fillClassesReplacements($file, $classes, $replacements)
         }
@@ -52,7 +48,6 @@ class Replacer {
             assemblies      = $assemblies
             namespaces      = $namespaces
             paramBlock      = $paramBlock
-            addTypes        = $addTypes
             classes         = $classes
             replacementsMap = $replacementsMap
         }
@@ -125,16 +120,6 @@ class Replacer {
         $usingStatements = $file.Ast.FindAll( { $args[0] -is [UsingStatementAst] -and $args[0].UsingStatementKind -eq "Namespace" }, $false)
         foreach ($usingStatement in $usingStatements) {
             $namespaces[$usingStatement.Name.Value] = "using namespace $($usingStatement.Name.Value)"
-            $replacements.Add(@{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" })
-        }
-    }
-
-    # Fill replacements for Add-Type
-    [void]fillAddTypesReplacements([FileInfo]$file, [System.Collections.Specialized.OrderedDictionary]$addTypes, [System.Collections.ArrayList]$replacements) {
-        $usingStatements = $file.Ast.FindAll( { $args[0] -is [CommandAst] -and $args[0].GetCommandName() -eq "Add-Type" }, $false)
-        foreach ($usingStatement in $usingStatements) {
-            $text = $usingStatement.Extent.Text
-            $addTypes[$text] = $text
             $replacements.Add(@{start = $usingStatement.Extent.StartOffset; Length = $usingStatement.Extent.EndOffset - $usingStatement.Extent.StartOffset; value = "" })
         }
     }

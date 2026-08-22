@@ -1,0 +1,11 @@
+{
+  "projectRoot": "..\\..\\",
+  "outDir": "tests\\moduleCache\\build",
+  "entryPoints": {
+    "tests\\moduleCache\\diamond-main.ps1": "module-cache-diamond.ps1",
+    "tests\\moduleCache\\force-main.ps1": "module-cache-force.ps1",
+    "tests\\moduleCache\\runspace-transfer-main.ps1": "module-cache-runspace-transfer.ps1"
+  },
+  "stripComments": true,
+  "keepHeaderComments": true
+}

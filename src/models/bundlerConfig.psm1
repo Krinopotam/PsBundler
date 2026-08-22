@@ -23,6 +23,10 @@ class BundlerConfig {
 
     # Source map variable name used in bundle
     [string]$modulesSourceMapVarName # = "__PS_BUNDLER_MODULES__"
+    # Reserved source-map key containing the loader source passed to child runspaces
+    [string]$moduleLoaderMapKey
+    # Per-runspace state variable holding the module cache and loading guard
+    [string]$moduleRuntimeContextVarName
 
     [ObjectHelpers]$_objectHelpers
     [PathHelpers]$_pathHelpers
@@ -43,6 +47,8 @@ class BundlerConfig {
         $this.Load()
         #$this.modulesSourceMapVarName = "__MODULES_" + [Guid]::NewGuid().ToString("N")
         $this.modulesSourceMapVarName = "__PS_BUNDLER_MODULES"
+        $this.moduleLoaderMapKey = "__PS_BUNDLER_INTERNAL_GET_MODULE"
+        $this.moduleRuntimeContextVarName = "__PS_BUNDLER_MODULES_RUNTIME_CONTEXT"
     }
 
     [void]Load() {

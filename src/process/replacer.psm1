@@ -90,17 +90,36 @@ class Replacer {
                 $replacement.Value = '& ([scriptblock]::Create($global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"].toString()))' 
             }
             elseif ($importInfo.type -eq 'using') {
-                #$replacement.Value = 'Import-Module (New-Module -ScriptBlock $ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '")["' + $importId + '"]) -Force -DisableNameChecking' 
-                $replacement.Value = 'Import-Module (New-Module -Name ' + $moduleName + ' -ScriptBlock $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]) -DisableNameChecking' 
+                $moduleExpression = $this.getModuleLoaderExpression($importId, $moduleName, '$false')
+                $replacement.Value = 'Import-Module ' + $moduleExpression + ' -DisableNameChecking'
             }
             elseif ($importInfo.type -eq 'module') {
                 # Import-Module can be passed a paths array. We replace one import to many imports.
                 $importParams = $this._astHelper.GetNamedParametersMap($importInfo.ImportAst)
                 $importParams["DisableNameChecking"] = $null
-                $paramsStr = $this._astHelper.ConvertParamsAstMapToString($importParams)
 
-                #$value = 'Import-Module (New-Module -ScriptBlock $ExecutionContext.SessionState.PSVariable.GetValue("' + $this._config.modulesSourceMapVarName + '")["' + $importId + '"])' + $paramsStr
-                $value = 'Import-Module (New-Module -Name ' + $moduleName + ' -ScriptBlock $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"])' + $paramsStr
+                # New-Module executes a module body immediately, so the loader must
+                # be told whether this import explicitly requests a reload. For an
+                # expression such as -Force:$reload, evaluate it once and reuse the
+                # result for both module creation and Import-Module binding.
+                $reloadExpression = '$false'
+                $forceParameter = $this.getForceParameter($importInfo.ImportAst)
+                $forceParameterSuffix = ''
+                if ($forceParameter) {
+                    $reloadExpression = '$true'
+                    if ($forceParameter.Argument) {
+                        $forceVariableName = '__PS_BUNDLER_FORCE_' + $importInfo.ImportAst.Extent.StartOffset
+                        $reloadExpression = '([bool]($local:' + $forceVariableName + ' = ' + $forceParameter.Argument.Extent.Text + '))'
+                        [void]$importParams.Remove($forceParameter.ParameterName)
+                        $forceParameterSuffix = ' -' + $forceParameter.ParameterName + ':$local:' + $forceVariableName
+                    }
+                }
+
+                $paramsStr = $this._astHelper.ConvertParamsAstMapToString($importParams)
+                $paramsStr += $forceParameterSuffix
+
+                $moduleExpression = $this.getModuleLoaderExpression($importId, $moduleName, $reloadExpression)
+                $value = 'Import-Module ' + $moduleExpression + $paramsStr
                 if ($processedImports.ContainsKey($importInfo.ImportAst)) {
                     $replacement = $processedImports[$importInfo.ImportAst]
                     $replacement.Value += [Environment]::NewLine + $value
@@ -110,6 +129,24 @@ class Replacer {
                 }
             } 
         }
+    }
+
+    [string]getModuleLoaderExpression([string]$moduleId, [string]$moduleName, [string]$reloadExpression) {
+        $sourceMapName = $this._config.modulesSourceMapVarName
+        $loaderMapKey = $this._config.moduleLoaderMapKey
+        $loaderExpression = '([scriptblock]::Create(($global:' + $sourceMapName + '["' + $loaderMapKey + '"]).ToString()))'
+        return '(& ' + $loaderExpression + ' "' + $moduleId + '" "' + $moduleName + '" ' + $reloadExpression + ')'
+    }
+
+    [CommandParameterAst]getForceParameter([CommandAst]$commandAst) {
+        foreach ($element in $commandAst.CommandElements) {
+            if ($element -isnot [CommandParameterAst]) { continue }
+            if ('Force'.StartsWith($element.ParameterName, [StringComparison]::OrdinalIgnoreCase) `
+                    -and $element.ParameterName.Length -ge 2) {
+                return $element
+            }
+        }
+        return $null
     }
 
     # Fill replacements for assemblies

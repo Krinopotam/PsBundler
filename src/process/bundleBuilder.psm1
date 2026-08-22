@@ -154,12 +154,61 @@ class BundleBuilder {
 
     [string]getModulesContent([FileInfo]$entryFile, [hashtable]$replacementsInfo) {
         $contentList = [System.Collections.ArrayList]::new()
-        $contentList.Add('$global:' + $this._config.modulesSourceMapVarName + ' = @{}' + [Environment]::NewLine)
+        $contentList.Add($this.getModuleRuntimeContent() + [Environment]::NewLine)
 
         $this.fillModulesContentList($entryFile, $replacementsInfo, $contentList, "", @{})
 
         if ($contentList.Count -eq 1) { return "" }
         return $contentList -join [Environment]::NewLine * 2
+    }
+
+    [string]getModuleRuntimeContent() {
+        $sourceMapName = $this._config.modulesSourceMapVarName
+        $loaderMapKey = $this._config.moduleLoaderMapKey
+        $runtimeContextName = $this._config.moduleRuntimeContextVarName
+        $newLine = [Environment]::NewLine
+
+        $lines = @()
+        $lines += '$global:' + $sourceMapName + ' = @{}'
+        $lines += '$global:' + $sourceMapName + '["' + $loaderMapKey + '"] = {'
+        $lines += '    param([string]$ModuleId, [string]$ModuleName, [bool]$Reload = $false)'
+        $lines += ''
+        $lines += '    $runtimeContext = $ExecutionContext.SessionState.PSVariable.GetValue("' + $runtimeContextName + '")'
+        $lines += '    if ($runtimeContext -isnot [hashtable] -or -not [object]::ReferenceEquals($runtimeContext["SourceMap"], $global:' + $sourceMapName + ')) {'
+        $lines += '        $runtimeContext = @{'
+        $lines += '            SourceMap = $global:' + $sourceMapName
+        $lines += '            Cache = @{}'
+        $lines += '            Loading = @{}'
+        $lines += '        }'
+        $lines += '        $global:' + $runtimeContextName + ' = $runtimeContext'
+        $lines += '    }'
+        $lines += ''
+        $lines += '    $cache = $runtimeContext["Cache"]'
+        $lines += '    $loading = $runtimeContext["Loading"]'
+        $lines += '    if (-not $Reload -and $cache.ContainsKey($ModuleId)) {'
+        $lines += '        return $cache[$ModuleId]'
+        $lines += '    }'
+        $lines += ''
+        $lines += '    if ($loading.ContainsKey($ModuleId)) {'
+        $lines += '        throw "Cyclic module initialization detected: $ModuleId"'
+        $lines += '    }'
+        $lines += '    if (-not $global:' + $sourceMapName + '.ContainsKey($ModuleId)) {'
+        $lines += '        throw "Bundled module source is not registered: $ModuleId"'
+        $lines += '    }'
+        $lines += ''
+        $lines += '    $loading[$ModuleId] = $true'
+        $lines += '    try {'
+        $lines += '        $module = New-Module -Name $ModuleName -ScriptBlock $global:' + $sourceMapName + '[$ModuleId]'
+        $lines += '        if (-not $module) { throw "Bundled module initialization returned no module: $ModuleId" }'
+        $lines += '        $cache[$ModuleId] = $module'
+        $lines += '        return $module'
+        $lines += '    }'
+        $lines += '    finally {'
+        $lines += '        [void]$loading.Remove($ModuleId)'
+        $lines += '    }'
+        $lines += '}'
+
+        return $lines -join $newLine
     }
 
     [void]fillModulesContentList([FileInfo]$file, [hashtable]$replacementsInfo, [System.Collections.ArrayList]$contentList, [string]$importType, [hashtable]$processed = @{}) {
@@ -198,7 +247,12 @@ class BundleBuilder {
     }
 
     [void]addContentToFile([string]$path, [string]$content) {
-        Add-Content -Path $path -Value $content -Encoding UTF8 | Out-Null
+        # Windows PowerShell writes -Encoding UTF8 with a BOM, while modern
+        # PowerShell writes UTF-8 without one. PowerShell 2 treats a BOM-less
+        # script as ANSI, which can corrupt non-ASCII source and even its syntax.
+        # Use an explicit encoding so bundles are identical across host versions.
+        $encoding = [System.Text.UTF8Encoding]::new($true)
+        [System.IO.File]::AppendAllText($path, $content + [Environment]::NewLine, $encoding)
     }   
 
     [string]GetBundleName ($bundleName, [FileInfo]$entryFile) { 

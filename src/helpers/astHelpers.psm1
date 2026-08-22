@@ -88,8 +88,11 @@ Class AstHelpers {
             }
 
             $parName = $el.ParameterName
-            $parValue = $null
-            if ($i + 1 -lt $elements.Count -and $elements[$i + 1] -isnot [CommandParameterAst]) {
+            # Switch parameters can carry an inline argument, for example
+            # -Force:$false. CommandParameterAst keeps that expression in
+            # Argument rather than as the next command element.
+            $parValue = $el.Argument
+            if (-not $parValue -and $i + 1 -lt $elements.Count -and $elements[$i + 1] -isnot [CommandParameterAst]) {
                 $parValue = $elements[$i + 1]
                 $i++
             }
@@ -120,7 +123,14 @@ Class AstHelpers {
         $paramsStr = ""
         foreach ($key in $paramsMap.Keys) {
             $value = $paramsMap[$key]
-            if ($value) { $paramsStr += " -$key " + $value.Extent.Text }
+            if ($value) {
+                $separator = " "
+                if ($value.Parent -is [CommandParameterAst] `
+                        -and [object]::ReferenceEquals($value.Parent.Argument, $value)) {
+                    $separator = ":"
+                }
+                $paramsStr += " -$key$separator" + $value.Extent.Text
+            }
             else { $paramsStr += " -$key" }
         }
         return $paramsStr

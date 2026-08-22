@@ -1,6 +1,6 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.11
+#Version: 2.1.13
 #requires -Version 5.1
 ##########################################################################################
 
@@ -89,7 +89,9 @@ class BundlerConfig {
     [bool]$deferClassesCompilation = $false    
     [bool]$embedClassesAsBase64 = $false
     
-    [string]$modulesSourceMapVarName 
+    [string]$modulesSourceMapVarName     
+    [string]$moduleLoaderMapKey    
+    [string]$moduleRuntimeContextVarName
 
     [ObjectHelpers]$_objectHelpers
     [PathHelpers]$_pathHelpers
@@ -109,6 +111,8 @@ class BundlerConfig {
         
         $this.Load()        
         $this.modulesSourceMapVarName = "__PS_BUNDLER_MODULES"
+        $this.moduleLoaderMapKey = "__PS_BUNDLER_INTERNAL_GET_MODULE"
+        $this.moduleRuntimeContextVarName = "__PS_BUNDLER_MODULES_RUNTIME_CONTEXT"
     }
 
     [void]Load() {        
@@ -614,9 +618,9 @@ Class AstHelpers {
                 continue
             }
 
-            $parName = $el.ParameterName
-            $parValue = $null
-            if ($i + 1 -lt $elements.Count -and $elements[$i + 1] -isnot [CommandParameterAst]) {
+            $parName = $el.ParameterName                                    
+            $parValue = $el.Argument
+            if (-not $parValue -and $i + 1 -lt $elements.Count -and $elements[$i + 1] -isnot [CommandParameterAst]) {
                 $parValue = $elements[$i + 1]
                 $i++
             }
@@ -645,7 +649,14 @@ Class AstHelpers {
         $paramsStr = ""
         foreach ($key in $paramsMap.Keys) {
             $value = $paramsMap[$key]
-            if ($value) { $paramsStr += " -$key " + $value.Extent.Text }
+            if ($value) {
+                $separator = " "
+                if ($value.Parent -is [CommandParameterAst] `
+                        -and [object]::ReferenceEquals($value.Parent.Argument, $value)) {
+                    $separator = ":"
+                }
+                $paramsStr += " -$key$separator" + $value.Extent.Text
+            }
             else { $paramsStr += " -$key" }
         }
         return $paramsStr
@@ -930,15 +941,32 @@ class Replacer {
             elseif ($importInfo.type -eq 'ampersand') {                
                 $replacement.Value = '& ([scriptblock]::Create($global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"].toString()))' 
             }
-            elseif ($importInfo.type -eq 'using') {                
-                $replacement.Value = 'Import-Module (New-Module -Name ' + $moduleName + ' -ScriptBlock $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"]) -DisableNameChecking' 
+            elseif ($importInfo.type -eq 'using') {
+                $moduleExpression = $this.getModuleLoaderExpression($importId, $moduleName, '$false')
+                $replacement.Value = 'Import-Module ' + $moduleExpression + ' -DisableNameChecking'
             }
             elseif ($importInfo.type -eq 'module') {                
                 $importParams = $this._astHelper.GetNamedParametersMap($importInfo.ImportAst)
                 $importParams["DisableNameChecking"] = $null
+                                                                
+                $reloadExpression = '$false'
+                $forceParameter = $this.getForceParameter($importInfo.ImportAst)
+                $forceParameterSuffix = ''
+                if ($forceParameter) {
+                    $reloadExpression = '$true'
+                    if ($forceParameter.Argument) {
+                        $forceVariableName = '__PS_BUNDLER_FORCE_' + $importInfo.ImportAst.Extent.StartOffset
+                        $reloadExpression = '([bool]($local:' + $forceVariableName + ' = ' + $forceParameter.Argument.Extent.Text + '))'
+                        [void]$importParams.Remove($forceParameter.ParameterName)
+                        $forceParameterSuffix = ' -' + $forceParameter.ParameterName + ':$local:' + $forceVariableName
+                    }
+                }
+
                 $paramsStr = $this._astHelper.ConvertParamsAstMapToString($importParams)
-                
-                $value = 'Import-Module (New-Module -Name ' + $moduleName + ' -ScriptBlock $global:' + $this._config.modulesSourceMapVarName + '["' + $importId + '"])' + $paramsStr
+                $paramsStr += $forceParameterSuffix
+
+                $moduleExpression = $this.getModuleLoaderExpression($importId, $moduleName, $reloadExpression)
+                $value = 'Import-Module ' + $moduleExpression + $paramsStr
                 if ($processedImports.ContainsKey($importInfo.ImportAst)) {
                     $replacement = $processedImports[$importInfo.ImportAst]
                     $replacement.Value += [Environment]::NewLine + $value
@@ -948,6 +976,24 @@ class Replacer {
                 }
             } 
         }
+    }
+
+    [string]getModuleLoaderExpression([string]$moduleId, [string]$moduleName, [string]$reloadExpression) {
+        $sourceMapName = $this._config.modulesSourceMapVarName
+        $loaderMapKey = $this._config.moduleLoaderMapKey
+        $loaderExpression = '([scriptblock]::Create(($global:' + $sourceMapName + '["' + $loaderMapKey + '"]).ToString()))'
+        return '(& ' + $loaderExpression + ' "' + $moduleId + '" "' + $moduleName + '" ' + $reloadExpression + ')'
+    }
+
+    [CommandParameterAst]getForceParameter([CommandAst]$commandAst) {
+        foreach ($element in $commandAst.CommandElements) {
+            if ($element -isnot [CommandParameterAst]) { continue }
+            if ('Force'.StartsWith($element.ParameterName, [StringComparison]::OrdinalIgnoreCase) `
+                    -and $element.ParameterName.Length -ge 2) {
+                return $element
+            }
+        }
+        return $null
     }
     
     [void]fillAssembliesReplacements([FileInfo]$file, [System.Collections.Specialized.OrderedDictionary]$assemblies, [System.Collections.ArrayList]$replacements) {
@@ -1173,12 +1219,61 @@ class BundleBuilder {
 
     [string]getModulesContent([FileInfo]$entryFile, [hashtable]$replacementsInfo) {
         $contentList = [System.Collections.ArrayList]::new()
-        $contentList.Add('$global:' + $this._config.modulesSourceMapVarName + ' = @{}' + [Environment]::NewLine)
+        $contentList.Add($this.getModuleRuntimeContent() + [Environment]::NewLine)
 
         $this.fillModulesContentList($entryFile, $replacementsInfo, $contentList, "", @{})
 
         if ($contentList.Count -eq 1) { return "" }
         return $contentList -join [Environment]::NewLine * 2
+    }
+
+    [string]getModuleRuntimeContent() {
+        $sourceMapName = $this._config.modulesSourceMapVarName
+        $loaderMapKey = $this._config.moduleLoaderMapKey
+        $runtimeContextName = $this._config.moduleRuntimeContextVarName
+        $newLine = [Environment]::NewLine
+
+        $lines = @()
+        $lines += '$global:' + $sourceMapName + ' = @{}'
+        $lines += '$global:' + $sourceMapName + '["' + $loaderMapKey + '"] = {'
+        $lines += '    param([string]$ModuleId, [string]$ModuleName, [bool]$Reload = $false)'
+        $lines += ''
+        $lines += '    $runtimeContext = $ExecutionContext.SessionState.PSVariable.GetValue("' + $runtimeContextName + '")'
+        $lines += '    if ($runtimeContext -isnot [hashtable] -or -not [object]::ReferenceEquals($runtimeContext["SourceMap"], $global:' + $sourceMapName + ')) {'
+        $lines += '        $runtimeContext = @{'
+        $lines += '            SourceMap = $global:' + $sourceMapName
+        $lines += '            Cache = @{}'
+        $lines += '            Loading = @{}'
+        $lines += '        }'
+        $lines += '        $global:' + $runtimeContextName + ' = $runtimeContext'
+        $lines += '    }'
+        $lines += ''
+        $lines += '    $cache = $runtimeContext["Cache"]'
+        $lines += '    $loading = $runtimeContext["Loading"]'
+        $lines += '    if (-not $Reload -and $cache.ContainsKey($ModuleId)) {'
+        $lines += '        return $cache[$ModuleId]'
+        $lines += '    }'
+        $lines += ''
+        $lines += '    if ($loading.ContainsKey($ModuleId)) {'
+        $lines += '        throw "Cyclic module initialization detected: $ModuleId"'
+        $lines += '    }'
+        $lines += '    if (-not $global:' + $sourceMapName + '.ContainsKey($ModuleId)) {'
+        $lines += '        throw "Bundled module source is not registered: $ModuleId"'
+        $lines += '    }'
+        $lines += ''
+        $lines += '    $loading[$ModuleId] = $true'
+        $lines += '    try {'
+        $lines += '        $module = New-Module -Name $ModuleName -ScriptBlock $global:' + $sourceMapName + '[$ModuleId]'
+        $lines += '        if (-not $module) { throw "Bundled module initialization returned no module: $ModuleId" }'
+        $lines += '        $cache[$ModuleId] = $module'
+        $lines += '        return $module'
+        $lines += '    }'
+        $lines += '    finally {'
+        $lines += '        [void]$loading.Remove($ModuleId)'
+        $lines += '    }'
+        $lines += '}'
+
+        return $lines -join $newLine
     }
 
     [void]fillModulesContentList([FileInfo]$file, [hashtable]$replacementsInfo, [System.Collections.ArrayList]$contentList, [string]$importType, [hashtable]$processed = @{}) {
@@ -1210,8 +1305,9 @@ class BundleBuilder {
         return "{" + [Environment]::NewLine + $str + [Environment]::NewLine + "}"
     }
 
-    [void]addContentToFile([string]$path, [string]$content) {
-        Add-Content -Path $path -Value $content -Encoding UTF8 | Out-Null
+    [void]addContentToFile([string]$path, [string]$content) {                                
+        $encoding = [System.Text.UTF8Encoding]::new($true)
+        [System.IO.File]::AppendAllText($path, $content + [Environment]::NewLine, $encoding)
     }   
 
     [string]GetBundleName ($bundleName, [FileInfo]$entryFile) { 
@@ -2114,6 +2210,43 @@ Class FuncNameGenerator {
 
 
 $global:__PS_BUNDLER_MODULES = @{}
+$global:__PS_BUNDLER_MODULES["__PS_BUNDLER_INTERNAL_GET_MODULE"] = {
+    param([string]$ModuleId, [string]$ModuleName, [bool]$Reload = $false)
+
+    $runtimeContext = $ExecutionContext.SessionState.PSVariable.GetValue("__PS_BUNDLER_MODULES_RUNTIME_CONTEXT")
+    if ($runtimeContext -isnot [hashtable] -or -not [object]::ReferenceEquals($runtimeContext["SourceMap"], $global:__PS_BUNDLER_MODULES)) {
+        $runtimeContext = @{
+            SourceMap = $global:__PS_BUNDLER_MODULES
+            Cache = @{}
+            Loading = @{}
+        }
+        $global:__PS_BUNDLER_MODULES_RUNTIME_CONTEXT = $runtimeContext
+    }
+
+    $cache = $runtimeContext["Cache"]
+    $loading = $runtimeContext["Loading"]
+    if (-not $Reload -and $cache.ContainsKey($ModuleId)) {
+        return $cache[$ModuleId]
+    }
+
+    if ($loading.ContainsKey($ModuleId)) {
+        throw "Cyclic module initialization detected: $ModuleId"
+    }
+    if (-not $global:__PS_BUNDLER_MODULES.ContainsKey($ModuleId)) {
+        throw "Bundled module source is not registered: $ModuleId"
+    }
+
+    $loading[$ModuleId] = $true
+    try {
+        $module = New-Module -Name $ModuleName -ScriptBlock $global:__PS_BUNDLER_MODULES[$ModuleId]
+        if (-not $module) { throw "Bundled module initialization returned no module: $ModuleId" }
+        $cache[$ModuleId] = $module
+        return $module
+    }
+    finally {
+        [void]$loading.Remove($ModuleId)
+    }
+}
 
 
 $global:__PS_BUNDLER_MODULES["src/PsBundler.psm1"] = {
@@ -2126,5 +2259,5 @@ function Invoke-PSBundler {
 }
 }
 
-Import-Module (New-Module -Name PsBundler -ScriptBlock $global:__PS_BUNDLER_MODULES["src/PsBundler.psm1"]) -Force -DisableNameChecking
+Import-Module (& ([scriptblock]::Create(($global:__PS_BUNDLER_MODULES["__PS_BUNDLER_INTERNAL_GET_MODULE"]).ToString())) "src/PsBundler.psm1" "PsBundler" $true) -Force -DisableNameChecking
 Invoke-PsBundler -configPath $configPath

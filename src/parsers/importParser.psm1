@@ -151,7 +151,7 @@ class ImportParser {
     }
 
     # process "Ampersand commands" (like: & "file.ps1")
-    [string[]]ResolveAmpersandImports([FileInfo]$file) {
+    [hashtable[]]ResolveAmpersandImports([FileInfo]$file) {
         return $this.ParseInvocationImports($file, "Ampersand")
     }
 

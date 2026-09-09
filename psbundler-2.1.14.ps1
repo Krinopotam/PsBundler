@@ -1,6 +1,6 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.13
+#Version: 2.1.14
 #requires -Version 5.1
 ##########################################################################################
 
@@ -800,7 +800,7 @@ class ImportParser {
         return $this.ParseInvocationImports($file, "Dot")
     }
     
-    [string[]]ResolveAmpersandImports([FileInfo]$file) {
+    [hashtable[]]ResolveAmpersandImports([FileInfo]$file) {
         return $this.ParseInvocationImports($file, "Ampersand")
     }
 

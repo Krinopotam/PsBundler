@@ -20,6 +20,9 @@ class BundlerConfig {
     [bool]$deferClassesCompilation = $false
     # whether to embed deferred classes as base64. If false, classes will be embedded as here-strings (no here-string escaping)
     [bool]$embedClassesAsBase64 = $false
+    # lifecycle scripts executed once per complete build invocation
+    [string[]]$beforeBuildScripts = @()
+    [string[]]$afterBuildScripts = @()
 
     # Source map variable name used in bundle
     [string]$modulesSourceMapVarName # = "__PS_BUNDLER_MODULES__"
@@ -62,6 +65,7 @@ class BundlerConfig {
             obfuscate               = ""            # whether to obfuscate the output bundle (Natural/Hard)
             deferClassesCompilation = $false   # whether to defer classes compilation by wrapping classes source in Invoke-Expression
             embedClassesAsBase64    = $false      # whether to embed deferred classes as base64. If false, classes will be embedded as here-strings (no here-string escaping)
+            hooks                   = @{}
         }
 
         $userConfig = $this.GetConfigFromFile()
@@ -99,6 +103,48 @@ class BundlerConfig {
 
         $this.deferClassesCompilation = $config.deferClassesCompilation
         $this.embedClassesAsBase64 = $config.embedClassesAsBase64
+
+        $this.beforeBuildScripts = $this.GetHookPaths($config, "beforeBuild", $root)
+        $this.afterBuildScripts = $this.GetHookPaths($config, "afterBuild", $root)
+    }
+
+    [string[]]GetHookPaths ([hashtable]$config, [string]$hookName, [string]$root) {
+        $paths = @()
+
+        if (-not $config.ContainsKey("hooks") -or $null -eq $config.hooks) {
+            return [string[]]$paths
+        }
+
+        if ($config.hooks -isnot [System.Collections.IDictionary]) {
+            throw "The 'hooks' config value must be an object"
+        }
+
+        if (-not $config.hooks.ContainsKey($hookName) -or $null -eq $config.hooks[$hookName]) {
+            return [string[]]$paths
+        }
+
+        foreach ($hookPath in @($config.hooks[$hookName])) {
+            if ($hookPath -isnot [string] -or [string]::IsNullOrWhiteSpace($hookPath)) {
+                throw "Invalid path in hooks.$hookName"
+            }
+
+            $resolvedPath = $this._pathHelpers.GetFullPath($hookPath, $root)
+            if (-not $resolvedPath) {
+                throw "Invalid path in hooks.$hookName`: $hookPath"
+            }
+
+            if ([System.IO.Path]::GetExtension($resolvedPath) -ine ".ps1") {
+                throw "Hook must be a PowerShell script (.ps1): $hookPath"
+            }
+
+            if (-not (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
+                throw "Hook script not found: $resolvedPath"
+            }
+
+            $paths += $resolvedPath
+        }
+
+        return [string[]]$paths
     }
 
     [PSCustomObject]GetConfigFromFile () {

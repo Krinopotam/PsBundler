@@ -1,5 +1,6 @@
 ﻿using module .\process\scriptBundler.psm1
 using module .\models\bundlerConfig.psm1
+using module .\process\buildHookRunner.psm1
 using module .\extra\ps-obfuscator.psm1
 
 Class PsBundler { 
@@ -10,10 +11,16 @@ Class PsBundler {
     }
 
     [void]Start ([string]$configPath) {
+        $hookRunner = $null
+        $buildError = $null
+
         try {
             Write-Host "Start building..."
 
             $this._config = [BundlerConfig]::new($configPath)
+            $hookRunner = [BuildHookRunner]::new($this._config)
+
+            $hookRunner.Run($this._config.beforeBuildScripts, "beforeBuild")
 
             if (-not $this._config.entryPoints) { Throw "HANDLED: No entry points found in config" }
 
@@ -35,8 +42,31 @@ Class PsBundler {
             Write-Host "Build completed at: $($this._config.outDir)"
         }
         catch {
-            if ($_.Exception.Message -like "HANDLED:*") { Write-Host ($_.Exception.Message -replace "^HANDLED:\s*", "") -ForegroundColor Red }
-            else { Write-Error -ErrorRecord $_ }
+            $buildError = $_
+        }
+        finally {
+            if ($hookRunner) {
+                try {
+                    $hookRunner.Run($this._config.afterBuildScripts, "afterBuild")
+                }
+                catch {
+                    if (-not $buildError) {
+                        $buildError = $_
+                    }
+                    else {
+                        Write-Host ("afterBuild hook failed: " + $_.Exception.Message) -ForegroundColor Red
+                    }
+                }
+            }
+        }
+
+        if ($buildError) {
+            if ($buildError.Exception.Message -like "HANDLED:*") {
+                Write-Host ($buildError.Exception.Message -replace "^HANDLED:\s*", "") -ForegroundColor Red
+            }
+            else {
+                Write-Error -ErrorRecord $buildError
+            }
         }
     }
 }

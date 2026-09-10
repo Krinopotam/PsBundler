@@ -1,6 +1,6 @@
 ﻿###################################### PSBundler #########################################
 #Author: Zaytsev Maksim
-#Version: 2.1.14
+#Version: 2.1.15
 #requires -Version 5.1
 ##########################################################################################
 
@@ -17,10 +17,16 @@ Class PsBundler {
     }
 
     [void]Start ([string]$configPath) {
+        $hookRunner = $null
+        $buildError = $null
+
         try {
             Write-Host "Start building..."
 
             $this._config = [BundlerConfig]::new($configPath)
+            $hookRunner = [BuildHookRunner]::new($this._config)
+
+            $hookRunner.Run($this._config.beforeBuildScripts, "beforeBuild")
 
             if (-not $this._config.entryPoints) { Throw "HANDLED: No entry points found in config" }
 
@@ -42,8 +48,31 @@ Class PsBundler {
             Write-Host "Build completed at: $($this._config.outDir)"
         }
         catch {
-            if ($_.Exception.Message -like "HANDLED:*") { Write-Host ($_.Exception.Message -replace "^HANDLED:\s*", "") -ForegroundColor Red }
-            else { Write-Error -ErrorRecord $_ }
+            $buildError = $_
+        }
+        finally {
+            if ($hookRunner) {
+                try {
+                    $hookRunner.Run($this._config.afterBuildScripts, "afterBuild")
+                }
+                catch {
+                    if (-not $buildError) {
+                        $buildError = $_
+                    }
+                    else {
+                        Write-Host ("afterBuild hook failed: " + $_.Exception.Message) -ForegroundColor Red
+                    }
+                }
+            }
+        }
+
+        if ($buildError) {
+            if ($buildError.Exception.Message -like "HANDLED:*") {
+                Write-Host ($buildError.Exception.Message -replace "^HANDLED:\s*", "") -ForegroundColor Red
+            }
+            else {
+                Write-Error -ErrorRecord $buildError
+            }
         }
     }
 }
@@ -87,7 +116,9 @@ class BundlerConfig {
     [bool]$keepHeaderComments = $true    
     [string]$obfuscate = ""    
     [bool]$deferClassesCompilation = $false    
-    [bool]$embedClassesAsBase64 = $false
+    [bool]$embedClassesAsBase64 = $false    
+    [string[]]$beforeBuildScripts = @()
+    [string[]]$afterBuildScripts = @()
     
     [string]$modulesSourceMapVarName     
     [string]$moduleLoaderMapKey    
@@ -125,6 +156,7 @@ class BundlerConfig {
             obfuscate               = ""            
             deferClassesCompilation = $false   
             embedClassesAsBase64    = $false      
+            hooks                   = @{}
         }
 
         $userConfig = $this.GetConfigFromFile()
@@ -159,6 +191,48 @@ class BundlerConfig {
 
         $this.deferClassesCompilation = $config.deferClassesCompilation
         $this.embedClassesAsBase64 = $config.embedClassesAsBase64
+
+        $this.beforeBuildScripts = $this.GetHookPaths($config, "beforeBuild", $root)
+        $this.afterBuildScripts = $this.GetHookPaths($config, "afterBuild", $root)
+    }
+
+    [string[]]GetHookPaths ([hashtable]$config, [string]$hookName, [string]$root) {
+        $paths = @()
+
+        if (-not $config.ContainsKey("hooks") -or $null -eq $config.hooks) {
+            return [string[]]$paths
+        }
+
+        if ($config.hooks -isnot [System.Collections.IDictionary]) {
+            throw "The 'hooks' config value must be an object"
+        }
+
+        if (-not $config.hooks.ContainsKey($hookName) -or $null -eq $config.hooks[$hookName]) {
+            return [string[]]$paths
+        }
+
+        foreach ($hookPath in @($config.hooks[$hookName])) {
+            if ($hookPath -isnot [string] -or [string]::IsNullOrWhiteSpace($hookPath)) {
+                throw "Invalid path in hooks.$hookName"
+            }
+
+            $resolvedPath = $this._pathHelpers.GetFullPath($hookPath, $root)
+            if (-not $resolvedPath) {
+                throw "Invalid path in hooks.$hookName`: $hookPath"
+            }
+
+            if ([System.IO.Path]::GetExtension($resolvedPath) -ine ".ps1") {
+                throw "Hook must be a PowerShell script (.ps1): $hookPath"
+            }
+
+            if (-not (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
+                throw "Hook script not found: $resolvedPath"
+            }
+
+            $paths += $resolvedPath
+        }
+
+        return [string[]]$paths
     }
 
     [PSCustomObject]GetConfigFromFile () {
@@ -1335,6 +1409,36 @@ class BundleBuilder {
         }
 
         return ""
+    }
+}
+
+class BuildHookRunner {
+    [BundlerConfig]$_config
+
+    BuildHookRunner ([BundlerConfig]$config) {
+        $this._config = $config
+    }
+
+    [void]Run ([string[]]$scriptPaths, [string]$stage) {
+        if (-not $scriptPaths -or $scriptPaths.Count -eq 0) { return }
+
+        foreach ($scriptPath in $scriptPaths) {
+            Write-Host "    Running $stage hook: $scriptPath"
+
+            $oldLocation = Get-Location
+
+            try {                                
+                $ErrorActionPreference = "Stop"
+                Set-Location -LiteralPath $this._config.projectRoot
+                & $scriptPath
+            }
+            catch {
+                throw "HANDLED: Error in $stage hook '$scriptPath': $($_.Exception.Message)"
+            }
+            finally {
+                Set-Location -LiteralPath $oldLocation.Path
+            }
+        }
     }
 }
 

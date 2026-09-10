@@ -155,7 +155,15 @@ A custom configuration file path can be specified explicitly using the **`-confi
   "stripComments": true,
   "keepHeaderComments": true,
   "deferClassesCompilation": true,
-  "embedClassesAsBase64": false
+  "embedClassesAsBase64": false,
+  "hooks": {
+    "beforeBuild": [
+      "scripts\\update-config.ps1"
+    ],
+    "afterBuild": [
+      "scripts\\write-build-log.ps1"
+    ]
+  }
 }
 ```
 
@@ -171,6 +179,7 @@ A custom configuration file path can be specified explicitly using the **`-confi
 | `obfuscate` | bool / string | Obfuscation mode: `true` (equivalent to `"Hard"`), `"Natural"`, or `"Hard"` |
 | `deferClassesCompilation` | bool | Defers class compilation using `Invoke-Expression` |
 | `embedClassesAsBase64` | bool | Embeds deferred classes as Base64 instead of here-strings |
+| `hooks` | object | Optional lifecycle scripts executed during a build |
 
 ---
 
@@ -273,6 +282,17 @@ This option is only relevant when `deferClassesCompilation` is enabled.
   - Recommended if classes contain here-strings
 
 If your project’s classes do not use here-strings, it is safe to leave this option set to `false`.
+
+#### `hooks`
+
+Hooks allow project-specific PowerShell scripts to run around the complete build invocation. Hook paths are resolved relative to `projectRoot`, are executed in the order specified, and must point to `.ps1` files.
+
+- `beforeBuild` — runs once before any configured entry point is processed. If a hook fails, bundle generation is skipped.
+- `afterBuild` — runs once after the build attempt, including when an earlier build step fails. This is useful for logging and cleanup.
+
+Hooks are executed as regular scripts rather than dot-sourced scripts. Their working directory is temporarily set to `projectRoot`, and the original working directory is restored afterward. The configuration file itself is loaded before `beforeBuild` runs; a hook that changes `psbundler.config.json` does not alter the already loaded build settings.
+
+Hooks execute arbitrary PowerShell code and should be treated with the same trust level as the build configuration.
 
 ---
 

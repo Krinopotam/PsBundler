@@ -1,0 +1,17 @@
+{
+  "projectRoot": ".\\",
+  "outDir": "output",
+  "entryPoints": {
+    "main.ps1": "hook-test.ps1"
+  },
+  "stripComments": true,
+  "keepHeaderComments": true,
+  "hooks": {
+    "beforeBuild": [
+      "before-build.ps1"
+    ],
+    "afterBuild": [
+      "after-build.ps1"
+    ]
+  }
+}
